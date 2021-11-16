@@ -13,6 +13,7 @@ class TestNameEntityRecognitionModel(TestCase):
     @classmethod
     def create_csv(cls, lines: int):
         with open(TestNameEntityRecognitionModel.MOCK_FILENAME, 'w') as f:
+            f.write(',')
             f.write(','.join(NameEntityRecognitionModel.EXPECTED_DATA_COLUMNS))
             f.write('\n')
             for line in range(lines):
@@ -138,4 +139,4 @@ class TestNameEntityRecognitionModel(TestCase):
                             'next-next-pos': '__END2__'})
 
         features = NameEntityRecognitionModel.extract_features(s)
-        self.assertDictEqual(features, expected_features)
+        self.assertDictEqual(features[0], expected_features)

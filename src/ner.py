@@ -1,5 +1,11 @@
+import numpy as np
 from pathlib import Path
 import pandas as pd
+import sklearn_crfsuite
+import pickle
+from sklearn_crfsuite import metrics
+from sklearn.model_selection import train_test_split
+import logging
 
 
 class NameEntityRecognitionModel:
@@ -15,7 +21,7 @@ class NameEntityRecognitionModel:
             raise FileNotFoundError("Dataset not found. Download dataset from "
                                     "https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus")
 
-        df = pd.read_csv(dataset, encoding="ISO-8859-1")
+        df = pd.read_csv(dataset, encoding="ISO-8859-1", on_bad_lines='skip', index_col=0)
         df = df.fillna(method='ffill')
 
         if size == -1:
@@ -32,8 +38,7 @@ class NameEntityRecognitionModel:
         return input_columns_set == NameEntityRecognitionModel.EXPECTED_DATA_COLUMNS
 
     @classmethod
-    def extract_features(cls, s: pd.Series) -> dict:
-        print(s)
+    def extract_features(cls, s: pd.Series) -> list:
         word = s['word']
         postag = s['pos']
         features = {
@@ -68,4 +73,47 @@ class NameEntityRecognitionModel:
                     f'{p}word:postag[:2]': postag[:2],
                 })
 
-        return features
+        return [features]
+
+    @classmethod
+    def train_model(cls, dataset: pd.DataFrame) -> sklearn_crfsuite.estimator.CRF:
+        x = [NameEntityRecognitionModel.extract_features(row) for _, row in dataset.iterrows()]
+        y = [[row['tag']] for _, row in dataset.iterrows()]
+
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.1, random_state=0)
+
+        crf = sklearn_crfsuite.CRF(
+            algorithm='l2sgd',  # l2sgd: Stochastic Gradient Descent with L2 regularization term
+            max_iterations=1000,  # maximum number of iterations
+        )
+
+        crf.fit(x_train, y_train)
+
+        classes = np.unique(y)
+        classes = classes.tolist()
+        new_classes = classes.copy()
+        new_classes.pop()
+
+        y_pred = crf.predict(x_test)
+
+        logging.info("--- performance of the CRF model")
+        logging.info(metrics.flat_classification_report(y_test, y_pred, labels=new_classes))
+
+        return crf
+
+    def __init__(self, dataset: Path) -> None:
+        model_path = Path('./models/ner.model')
+        if not model_path.exists():
+            logging.info('NER is not available. Start process to create it.')
+            logging.info('Loading dataset.')
+            df = NameEntityRecognitionModel.load_dataset(dataset)
+            logging.info('Dataset loaded.')
+            if NameEntityRecognitionModel.check_data(df):
+                logging.info('Dataset structure is valid.')
+                logging.info('Start training model.')
+                pickle.dump(NameEntityRecognitionModel.train_model(df), open(model_path, 'wb'))
+                logging.info('Model saved.')
+            else:
+                raise ValueError('Invalid dataset')
+
+        self._ner_model = pickle.load(open(model_path, 'rb'))
