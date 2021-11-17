@@ -6,6 +6,10 @@ import pickle
 from sklearn_crfsuite import metrics
 from sklearn.model_selection import train_test_split
 import logging
+import nltk
+
+nltk.download('averaged_perceptron_tagger')
+nltk.download('punkt')
 
 
 class NameEntityRecognitionModel:
@@ -100,6 +104,11 @@ class NameEntityRecognitionModel:
         logging.info(metrics.flat_classification_report(y_test, y_pred, labels=new_classes))
 
         return crf
+
+    @classmethod
+    def get_pos_tag(cls, sent: str) -> list:
+        tokens = nltk.word_tokenize(sent)
+        return nltk.tag.pos_tag(tokens)
 
     def __init__(self, dataset: Path = Path('./models/datasets/ner.csv'),
                  model_path: Path = Path('./models/ner.model')) -> None:

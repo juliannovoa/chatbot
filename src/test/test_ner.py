@@ -168,3 +168,9 @@ class TestNameEntityRecognitionModel(TestCase):
         NameEntityRecognitionModel(model_path=model_path, dataset=Mock())
         self.assertTrue(model_path.exists())
         os.remove(model_path)
+
+    def test_get_pos_tag(self):
+        input_text = 'this is an example of strings'
+        tagged_text = NameEntityRecognitionModel.get_pos_tag(input_text)
+        for token, tag in tagged_text:
+            self.assertTrue(token in input_text)
