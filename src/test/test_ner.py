@@ -1,5 +1,9 @@
 import os
+import pickle
+from unittest.mock import patch, Mock
+
 import pandas as pd
+import sklearn_crfsuite
 
 from pathlib import Path
 from unittest import TestCase
@@ -19,7 +23,7 @@ class TestNameEntityRecognitionModel(TestCase):
             for line in range(lines):
                 f.write(f'{lines},thousand,of,demonstr,NNS,lowercase,demonstrators,IN,lowercase,Of,NNS,__START1__,'
                         f'__start1__,ABC,__START2__,__start2__,__START2__,wildcard,__START2__,wildcard,'
-                        f'HI,1,capitalized,2005,O\n')
+                        f'HI,1,capitalized,hiii,O\n')
 
     @classmethod
     def delete_csv(cls):
@@ -65,7 +69,7 @@ class TestNameEntityRecognitionModel(TestCase):
         file = Path(TestNameEntityRecognitionModel.MOCK_FILENAME)
         df = NameEntityRecognitionModel.load_dataset(file, desired_lines)
         self.assertEqual(len(df), desired_lines)
-        os.remove(TestNameEntityRecognitionModel.MOCK_FILENAME)
+        TestNameEntityRecognitionModel.delete_csv()
 
     def test_check_data_correct(self):
         lines = 1
@@ -74,7 +78,7 @@ class TestNameEntityRecognitionModel(TestCase):
         file = Path(TestNameEntityRecognitionModel.MOCK_FILENAME)
         df = NameEntityRecognitionModel.load_dataset(file)
         self.assertTrue(NameEntityRecognitionModel.check_data(df))
-        os.remove(TestNameEntityRecognitionModel.MOCK_FILENAME)
+        TestNameEntityRecognitionModel.delete_csv()
 
     def test_check_data_less_columns(self):
         lines = 1
@@ -84,7 +88,7 @@ class TestNameEntityRecognitionModel(TestCase):
         df = NameEntityRecognitionModel.load_dataset(file)
         df.drop(df.columns[1], axis=1, inplace=True)
         self.assertFalse(NameEntityRecognitionModel.check_data(df))
-        os.remove(TestNameEntityRecognitionModel.MOCK_FILENAME)
+        TestNameEntityRecognitionModel.delete_csv()
 
     def test_check_data_more_columns(self):
         lines = 1
@@ -93,7 +97,7 @@ class TestNameEntityRecognitionModel(TestCase):
         file = Path(TestNameEntityRecognitionModel.MOCK_FILENAME)
         df = NameEntityRecognitionModel.load_dataset(file)
         self.assertFalse(NameEntityRecognitionModel.check_data(df.assign(new=[1])))
-        os.remove(TestNameEntityRecognitionModel.MOCK_FILENAME)
+        TestNameEntityRecognitionModel.delete_csv()
 
     def test_extract_features(self):
         expected_features = {
@@ -140,3 +144,27 @@ class TestNameEntityRecognitionModel(TestCase):
 
         features = NameEntityRecognitionModel.extract_features(s)
         self.assertDictEqual(features[0], expected_features)
+
+    def test_init_existing_model(self):
+        crf = sklearn_crfsuite.CRF()
+        model_path = Path('./mock.model')
+        with open(model_path, 'wb') as f:
+            pickle.dump(crf, f)
+            f.close()
+        t1 = os.path.getmtime(model_path)
+        model = NameEntityRecognitionModel(model_path=model_path)
+        t2 = os.path.getmtime(model_path)
+        self.assertEqual(t1, t2)
+        self.assertEqual(type(crf), type(model._ner_model))
+        os.remove(model_path)
+
+    @patch('src.ner.NameEntityRecognitionModel.check_data')
+    @patch('src.ner.NameEntityRecognitionModel.load_dataset')
+    @patch('src.ner.NameEntityRecognitionModel.train_model')
+    def test_init_not_existing_model(self, create_mock, load_mock, check_mock):
+        create_mock.return_value = sklearn_crfsuite.CRF()
+        model_path = Path('./mock.model')
+        self.assertFalse(model_path.exists())
+        NameEntityRecognitionModel(model_path=model_path, dataset=Mock())
+        self.assertTrue(model_path.exists())
+        os.remove(model_path)
