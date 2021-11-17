@@ -101,8 +101,8 @@ class NameEntityRecognitionModel:
 
         return crf
 
-    def __init__(self, dataset: Path) -> None:
-        model_path = Path('./models/ner.model')
+    def __init__(self, dataset: Path = Path('./models/datasets/ner.csv'),
+                 model_path: Path = Path('./models/ner.model')) -> None:
         if not model_path.exists():
             logging.info('NER is not available. Start process to create it.')
             logging.info('Loading dataset.')
@@ -111,9 +111,13 @@ class NameEntityRecognitionModel:
             if NameEntityRecognitionModel.check_data(df):
                 logging.info('Dataset structure is valid.')
                 logging.info('Start training model.')
-                pickle.dump(NameEntityRecognitionModel.train_model(df), open(model_path, 'wb'))
+                with open(model_path, 'wb') as f:
+                    pickle.dump(NameEntityRecognitionModel.train_model(df), f)
+                    f.close()
                 logging.info('Model saved.')
             else:
                 raise ValueError('Invalid dataset')
-
-        self._ner_model = pickle.load(open(model_path, 'rb'))
+        with open(model_path, 'rb') as f:
+            self._ner_model = pickle.load(f)
+            f.close()
+        logging.info('Model loaded')
