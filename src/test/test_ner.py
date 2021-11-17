@@ -174,3 +174,19 @@ class TestNameEntityRecognitionModel(TestCase):
         tagged_text = NameEntityRecognitionModel.get_pos_tag(input_text)
         for token, tag in tagged_text:
             self.assertTrue(token in input_text)
+
+    def test_process_input_text(self):
+        expected_output = pd.DataFrame(data={'word': ['hi'],
+                                             'prev-prev-word': ['__START2__'],
+                                             'prev-word': ['__START1__'],
+                                             'next-word': ['__END1__'],
+                                             'next-next-word': ['__END2__'],
+                                             'pos': ['NN'],
+                                             'prev-prev-pos': ['__START2__'],
+                                             'prev-pos': ['__START1__'],
+                                             'next-pos': ['__END1__'],
+                                             'next-next-pos': ['__END2__']})
+
+        output = NameEntityRecognitionModel.process_input_text('hi')
+
+        self.assertTrue(expected_output.equals(output))

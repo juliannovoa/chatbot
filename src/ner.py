@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import numpy as np
 from pathlib import Path
 import pandas as pd
@@ -110,6 +112,34 @@ class NameEntityRecognitionModel:
         tokens = nltk.word_tokenize(sent)
         return nltk.tag.pos_tag(tokens)
 
+    @classmethod
+    def process_input_text(cls, sent: str) -> pd.DataFrame:
+        preprocessed_text = NameEntityRecognitionModel.get_pos_tag(sent)
+        words = ['__START2__', '__START1__']
+        pos_tags = ['__START2__', '__START1__']
+        for token, tag in preprocessed_text:
+            words.append(token)
+            pos_tags.append(tag)
+        words.append('__END1__')
+        words.append('__END2__')
+        pos_tags.append('__END1__')
+        pos_tags.append('__END2__')
+
+        input_size = len(preprocessed_text)
+
+        data = {'word': words[2:2 + input_size],
+                'prev-prev-word': words[0:input_size],
+                'prev-word': words[1:1 + input_size],
+                'next-word': words[3:-1],
+                'next-next-word': words[4:],
+                'pos': pos_tags[2:2 + input_size],
+                'prev-prev-pos': pos_tags[0:input_size],
+                'prev-pos': pos_tags[1:1 + input_size],
+                'next-pos': pos_tags[3:-1],
+                'next-next-pos': pos_tags[4:]
+                }
+        return pd.DataFrame(data=data)
+
     def __init__(self, dataset: Path = Path('./models/datasets/ner.csv'),
                  model_path: Path = Path('./models/ner.model')) -> None:
         if not model_path.exists():
@@ -130,3 +160,4 @@ class NameEntityRecognitionModel:
             self._ner_model = pickle.load(f)
             f.close()
         logging.info('Model loaded')
+
