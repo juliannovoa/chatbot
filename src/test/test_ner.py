@@ -190,3 +190,24 @@ class TestNameEntityRecognitionModel(TestCase):
         output = NameEntityRecognitionModel.process_input_text('hi')
 
         self.assertTrue(expected_output.equals(output))
+
+    @patch('src.ner.NameEntityRecognitionModel.check_data')
+    @patch('src.ner.NameEntityRecognitionModel.load_dataset')
+    @patch('src.ner.NameEntityRecognitionModel.train_model')
+    def test_find_name_entities(self, create_mock, load_mock, check_mock):
+        crf = sklearn_crfsuite.CRF()
+        model_path = Path('./mock.model')
+        with open(model_path, 'wb') as f:
+            pickle.dump(crf, f)
+            f.close()
+
+        model_output = [['O'], ['B-geo'], ['O'], ['B-geo'], ['I-geo'], ['B-pol']]
+        text = 'Hi Zurich no United States Government'
+        expected_output = {'geo': ['Zurich', 'United States'],
+                           'pol': ['Government']}
+
+        model = NameEntityRecognitionModel(model_path=model_path)
+        model._ner_model.__class__.predict = Mock(return_value=model_output)
+        output = model.find_name_entities(text)
+        self.assertDictEqual(expected_output, output)
+        os.remove(model_path)

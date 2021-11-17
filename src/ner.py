@@ -161,3 +161,33 @@ class NameEntityRecognitionModel:
             f.close()
         logging.info('Model loaded')
 
+    def find_name_entities(self, sentence: str):
+        data = NameEntityRecognitionModel.process_input_text(sentence)
+        input_model = [NameEntityRecognitionModel.extract_features(row) for _, row in data.iterrows()]
+        output_model = self._ner_model.predict(input_model)
+        output_model = [item for sublist in output_model for item in sublist]
+        entity = []
+        entities = defaultdict(list)
+        tag = ''
+
+        for idx, val in enumerate(output_model):
+            if val[:2] == 'B-':
+                if len(entity) != 0:
+                    entities[tag].append(' '.join(entity))
+                    tag = ''
+                    entity = []
+                tag = val[2:]
+                entity.append(data.iloc[idx]['word'])
+            elif val[:2] == 'I-':
+                entity.append(data.iloc[idx]['word'])
+            elif len(entity) != 0:
+                entities[tag].append(' '.join(entity))
+                tag = ''
+                entity = []
+
+        if len(entity) != 0:
+            entities[tag].append(' '.join(entity))
+            tag = ''
+            entity = []
+
+        return entities
