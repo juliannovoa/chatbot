@@ -143,7 +143,7 @@ class TestNameEntityRecognitionModel(TestCase):
                             'next-next-pos': '__END2__'})
 
         features = NameEntityRecognitionModel.extract_features(s)
-        self.assertDictEqual(features[0], expected_features)
+        self.assertDictEqual(features, expected_features)
 
     def test_init_existing_model(self):
         crf = sklearn_crfsuite.CRF()

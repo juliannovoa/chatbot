@@ -79,12 +79,27 @@ class NameEntityRecognitionModel:
                     f'{p}word:postag[:2]': postag[:2],
                 })
 
-        return [features]
+        return features
 
     @classmethod
     def train_model(cls, dataset: pd.DataFrame) -> sklearn_crfsuite.estimator.CRF:
-        x = [NameEntityRecognitionModel.extract_features(row) for _, row in dataset.iterrows()]
-        y = [[row['tag']] for _, row in dataset.iterrows()]
+        x = []
+        y = []
+        sent_x = []
+        sent_y = []
+        sent_idx = 1
+        for _, row in dataset.iterrows():
+            if row['sentence_idx'] == sent_idx:
+                sent_x.append(NameEntityRecognitionModel.extract_features(row))
+                sent_y.append(row['tag'])
+            else:
+                x.append(sent_x)
+                y.append(sent_y)
+                sent_x = []
+                sent_y = []
+                sent_idx = row['sentence_idx']
+                sent_x.append(NameEntityRecognitionModel.extract_features(row))
+                sent_y.append(row['tag'])
 
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.1, random_state=0)
 
@@ -102,8 +117,8 @@ class NameEntityRecognitionModel:
 
         y_pred = crf.predict(x_test)
 
-        logging.info("--- performance of the CRF model")
-        logging.info(metrics.flat_classification_report(y_test, y_pred, labels=new_classes))
+        logging.warning("--- performance of the CRF model")
+        logging.warning(metrics.flat_classification_report(y_test, y_pred))
 
         return crf
 
@@ -149,7 +164,7 @@ class NameEntityRecognitionModel:
             logging.info('Dataset loaded.')
             if NameEntityRecognitionModel.check_data(df):
                 logging.info('Dataset structure is valid.')
-                logging.info('Start training model.')
+                logging.warning('Start training model.')
                 with open(model_path, 'wb') as f:
                     pickle.dump(NameEntityRecognitionModel.train_model(df), f)
                     f.close()
