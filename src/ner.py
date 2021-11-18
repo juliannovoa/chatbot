@@ -179,9 +179,9 @@ class NameEntityRecognitionModel:
             f.close()
         logging.info('Model loaded')
 
-    def find_name_entities(self, sentence: str):
+    def find_name_entities(self, sentence: str) -> defaultdict:
         data = NameEntityRecognitionModel.process_input_text(sentence)
-        input_model = [NameEntityRecognitionModel.extract_features(row) for _, row in data.iterrows()]
+        input_model = [[NameEntityRecognitionModel.extract_features(row) for _, row in data.iterrows()]]
         output_model = self._ner_model.predict(input_model)
         output_model = [item for sublist in output_model for item in sublist]
         entity = []
