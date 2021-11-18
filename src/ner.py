@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 
 import numpy as np
@@ -117,8 +118,8 @@ class NameEntityRecognitionModel:
 
         y_pred = crf.predict(x_test)
 
-        logging.warning("--- performance of the CRF model")
-        logging.warning(metrics.flat_classification_report(y_test, y_pred))
+        logging.info("--- performance of the CRF model")
+        logging.info(metrics.flat_classification_report(y_test, y_pred))
 
         return crf
 
@@ -155,23 +156,25 @@ class NameEntityRecognitionModel:
                 }
         return pd.DataFrame(data=data)
 
-    def __init__(self, dataset: Path = Path('./models/datasets/ner.csv'),
-                 model_path: Path = Path('./models/ner.model')) -> None:
+    def __init__(self, dataset: Path = Path(os.path.dirname(__file__)).joinpath('models/datasets/ner.csv'),
+                 model_path: Path = Path(os.path.dirname(__file__)).joinpath('models/ner.model')) -> None:
+
         if not model_path.exists():
             logging.info('NER is not available. Start process to create it.')
             logging.info('Loading dataset.')
-            df = NameEntityRecognitionModel.load_dataset(dataset)
+            df = NameEntityRecognitionModel.load_dataset(dataset.resolve())
             logging.info('Dataset loaded.')
             if NameEntityRecognitionModel.check_data(df):
                 logging.info('Dataset structure is valid.')
-                logging.warning('Start training model.')
-                with open(model_path, 'wb') as f:
-                    pickle.dump(NameEntityRecognitionModel.train_model(df), f)
+                logging.info('Start training model.')
+                model = NameEntityRecognitionModel.train_model(df)
+                with open(model_path.resolve(), 'wb') as f:
+                    pickle.dump(model, f)
                     f.close()
                 logging.info('Model saved.')
             else:
                 raise ValueError('Invalid dataset')
-        with open(model_path, 'rb') as f:
+        with open(model_path.resolve(), 'rb') as f:
             self._ner_model = pickle.load(f)
             f.close()
         logging.info('Model loaded')
