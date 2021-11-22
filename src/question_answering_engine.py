@@ -1,5 +1,6 @@
 import logging
 import pickle
+import editdistance
 import re
 from enum import Enum
 from pathlib import Path
@@ -75,9 +76,22 @@ class InformationFinder:
 
         logging.info('Nodes and predicates retrieved.')
 
-    @classmethod
-    def node_is_predicate(cls, name: str) -> bool:
-        return name in cls.WDT or name in cls.SCHEMA or name in cls.DDIS
+    def get_closest_item(self, input_instance: str, threshold: int = 500, predicate: bool = False) -> str:
+        match_node = ""
+        logging.debug(f"--- entity matching for \"{input_instance}\"\n")
+
+        if predicate:
+            data = self._predicates
+        else:
+            data = self._nodes
+
+        for k, v in data.items():
+            distance = editdistance.eval(v, input_instance)
+            logging.debug(f"edit distance between {v} and {input_instance}: {distance}")
+            if distance < threshold:
+                threshold = distance
+                match_node = k
+        return match_node
 
 
 class QuestionSolver:
