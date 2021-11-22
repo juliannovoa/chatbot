@@ -9,5 +9,4 @@ lib/
 lib64
 share/
 pyvenv.cfg
-src/models
 src/data
