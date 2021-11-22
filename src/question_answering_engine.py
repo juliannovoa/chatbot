@@ -1,5 +1,4 @@
 import logging
-import os
 import pickle
 import re
 from enum import Enum
@@ -26,8 +25,16 @@ class InformationFinder:
     RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
     PROCESSED_GRAPH_PATH = utils.get_data_path('ner.model')
 
+    @classmethod
+    def node_is_instance(cls, name: str) -> bool:
+        return name in cls.WD
+
+    @classmethod
+    def node_is_predicate(cls, name: str) -> bool:
+        return name in cls.WDT or name in cls.SCHEMA or name in cls.DDIS
+
     def __init__(self, raw_graph: Path = RAW_GRAPH_PATH,
-                 parsed_graph: Path = PROCESSED_GRAPH_PATH):
+                 parsed_graph: Path = PROCESSED_GRAPH_PATH) -> None:
         if not parsed_graph.exists():
             logging.info('Graph not available. Start process to parse it.')
             g = Graph()
@@ -50,12 +57,12 @@ class InformationFinder:
         for node in self._g.all_nodes():
             if isinstance(node, URIRef):
                 name = node.toPython()
-                if name in self.WD and name not in self._nodes:
+                if self.node_is_instance(name) and name not in self._nodes:
                     if self._g.value(node, self.RDFS.label):
                         self._nodes[name] = self._g.value(node, self.RDFS.label).toPython()
                     else:
                         self._nodes[name] = re.sub(".*/", "", name)
-                elif name not in self._predicates:
+                elif self.node_is_predicate(name) and name not in self._predicates:
                     if self._g.value(node, self.RDFS.label):
                         self._predicates[name] = self._g.value(node, self.RDFS.label).toPython()
                     else:
@@ -63,10 +70,14 @@ class InformationFinder:
 
         for _, p, _ in self._g:
             name = p.toPython()
-            if name not in self._predicates:
+            if self.node_is_predicate(name) and name not in self._predicates:
                 self._predicates[name] = re.sub(".*/", "", name)
 
         logging.info('Nodes and predicates retrieved.')
+
+    @classmethod
+    def node_is_predicate(cls, name: str) -> bool:
+        return name in cls.WDT or name in cls.SCHEMA or name in cls.DDIS
 
 
 class QuestionSolver:

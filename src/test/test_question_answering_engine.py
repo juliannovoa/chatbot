@@ -60,10 +60,7 @@ class TestInformationFinder(TestCase):
         self.create_nt()
         info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
                                         parsed_graph=Path(self.MOCK_GRAPH))
-        expected_predicates = {f'{str(InformationFinder.WDT)}{self.PREDICATE}': self.LABEL_PREDICATE,
-                               f'{str(InformationFinder.RDFS)}label': 'rdf-schema#label'}
-        print(expected_predicates)
-        print(info_finder._predicates)
+        expected_predicates = {f'{str(InformationFinder.WDT)}{self.PREDICATE}': self.LABEL_PREDICATE}
         self.assertDictEqual(expected_predicates, info_finder._predicates)
         self.delete_nt()
 
@@ -75,3 +72,13 @@ class TestInformationFinder(TestCase):
                               f'{str(InformationFinder.WD)}{self.ENTITY_2}': self.LABEL_ENTITY_2}
         self.assertDictEqual(expected_instances, info_finder._nodes)
         self.delete_nt()
+
+    def test_node_is_instance(self):
+        self.assertTrue(InformationFinder.node_is_instance('http://www.wikidata.org/entity/Q'))
+        self.assertFalse(InformationFinder.node_is_instance('http://www.wikidata.org/prop/direct/Q'))
+
+    def test_node_is_predicate(self):
+        self.assertTrue(InformationFinder.node_is_predicate('http://www.wikidata.org/prop/direct/Q'))
+        self.assertTrue(InformationFinder.node_is_predicate('http://ddis.ch/atai/Q'))
+        self.assertTrue(InformationFinder.node_is_predicate('http://schema.org/Q'))
+        self.assertFalse(InformationFinder.node_is_predicate('http://www.wikidata.org/entity/Q'))
