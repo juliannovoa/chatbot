@@ -22,8 +22,8 @@ class NameEntityRecognitionModel:
                              'prev-prev-shape', 'prev-prev-word', 'prev-shape', 'prev-word', 'sentence_idx',
                              'shape', 'word', 'tag'}
 
-    @classmethod
-    def load_dataset(cls, dataset: Path, size: int = -1) -> pd.DataFrame:
+    @staticmethod
+    def load_dataset(dataset: Path, size: int = -1) -> pd.DataFrame:
         if not dataset.is_file():
             raise FileNotFoundError("Dataset not found. Download dataset from "
                                     "https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus")
@@ -39,13 +39,8 @@ class NameEntityRecognitionModel:
 
         return df[:size]
 
-    @classmethod
-    def check_data(cls, df: pd.DataFrame) -> bool:
-        input_columns_set = set(df.columns.values)
-        return input_columns_set == NameEntityRecognitionModel.EXPECTED_DATA_COLUMNS
-
-    @classmethod
-    def extract_features(cls, s: pd.Series) -> list:
+    @staticmethod
+    def extract_features(s: pd.Series) -> list:
         word = s['word']
         postag = s['pos']
         features = {
@@ -82,8 +77,8 @@ class NameEntityRecognitionModel:
 
         return features
 
-    @classmethod
-    def train_model(cls, dataset: pd.DataFrame) -> sklearn_crfsuite.estimator.CRF:
+    @staticmethod
+    def train_model(dataset: pd.DataFrame) -> sklearn_crfsuite.estimator.CRF:
         x = []
         y = []
         sent_x = []
@@ -123,13 +118,13 @@ class NameEntityRecognitionModel:
 
         return crf
 
-    @classmethod
-    def get_pos_tag(cls, sent: str) -> list:
+    @staticmethod
+    def get_pos_tag(sent: str) -> list:
         tokens = nltk.word_tokenize(sent)
         return nltk.tag.pos_tag(tokens)
 
-    @classmethod
-    def process_input_text(cls, sent: str) -> pd.DataFrame:
+    @staticmethod
+    def process_input_text(sent: str) -> pd.DataFrame:
         preprocessed_text = NameEntityRecognitionModel.get_pos_tag(sent)
         words = ['__START2__', '__START1__']
         pos_tags = ['__START2__', '__START1__']
@@ -155,6 +150,11 @@ class NameEntityRecognitionModel:
                 'next-next-pos': pos_tags[4:]
                 }
         return pd.DataFrame(data=data)
+
+    @classmethod
+    def check_data(cls, df: pd.DataFrame) -> bool:
+        input_columns_set = set(df.columns.values)
+        return input_columns_set == cls.EXPECTED_DATA_COLUMNS
 
     def __init__(self, dataset: Path = Path(os.path.dirname(__file__)).joinpath('models/datasets/ner.csv'),
                  model_path: Path = Path(os.path.dirname(__file__)).joinpath('models/ner.model')) -> None:
