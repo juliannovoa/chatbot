@@ -1,4 +1,3 @@
-import os
 from collections import defaultdict
 
 import numpy as np
@@ -11,6 +10,8 @@ from sklearn.model_selection import train_test_split
 import logging
 import nltk
 
+from src import utils
+
 nltk.download('averaged_perceptron_tagger')
 nltk.download('punkt')
 
@@ -21,6 +22,9 @@ class NameEntityRecognitionModel:
                              'prev-lemma', 'prev-pos', 'prev-prev-iob', 'prev-prev-lemma', 'prev-prev-pos',
                              'prev-prev-shape', 'prev-prev-word', 'prev-shape', 'prev-word', 'sentence_idx',
                              'shape', 'word', 'tag'}
+
+    DATA_SET_PATH = utils.get_data_path('ner.csv')
+    MODEL_PATH = utils.get_data_path('ner.model')
 
     @staticmethod
     def load_dataset(dataset: Path, size: int = -1) -> pd.DataFrame:
@@ -156,8 +160,8 @@ class NameEntityRecognitionModel:
         input_columns_set = set(df.columns.values)
         return input_columns_set == cls.EXPECTED_DATA_COLUMNS
 
-    def __init__(self, dataset: Path = Path(os.path.dirname(__file__)).joinpath('models/datasets/ner.csv'),
-                 model_path: Path = Path(os.path.dirname(__file__)).joinpath('models/ner.model')) -> None:
+    def __init__(self, dataset: Path = DATA_SET_PATH,
+                 model_path: Path = MODEL_PATH) -> None:
 
         if not model_path.exists():
             logging.info('NER is not available. Start process to create it.')

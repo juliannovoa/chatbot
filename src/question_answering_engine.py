@@ -7,6 +7,7 @@ from pathlib import Path
 
 from rdflib import Graph, Namespace, URIRef
 
+from src import utils
 from src.ner import NameEntityRecognitionModel
 
 
@@ -21,21 +22,23 @@ class InformationFinder:
     SCHEMA = Namespace('http://schema.org/')
     DDIS = Namespace('http://ddis.ch/atai/')
     RDFS = Namespace('http://www.w3.org/2000/01/rdf-schema#')
-    # TODO Unify directories and create const file
-    DEFAULT_PATH = Path(os.path.dirname(__file__)).joinpath('data/14_graph.nt')
 
-    def __init__(self, graph: Path = DEFAULT_PATH):
-        path = Path('./graph.g')
-        if not path.exists():
+    RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
+    PROCESSED_GRAPH_PATH = utils.get_data_path('ner.model')
+
+    def __init__(self, raw_graph: Path = RAW_GRAPH_PATH,
+                 parsed_graph: Path = PROCESSED_GRAPH_PATH):
+        if not parsed_graph.exists():
             logging.info('Graph not available. Start process to parse it.')
             g = Graph()
-            g.parse(graph, format='turtle')
-            with open(path, 'wb') as f:
+            g.parse(raw_graph, format='turtle')
+            with open(parsed_graph.resolve(), 'wb') as f:
                 pickle.dump(g, f)
                 f.close()
                 logging.info('Graph created.')
 
-        with open(path.resolve(), 'rb') as f:
+        logging.info('Loading graph.')
+        with open(parsed_graph.resolve(), 'rb') as f:
             self._g = pickle.load(f)
             f.close()
         logging.info('Graph loaded.')
