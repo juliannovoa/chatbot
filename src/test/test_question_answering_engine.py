@@ -2,6 +2,7 @@ import os
 import pickle
 from unittest.mock import patch
 
+import rdflib
 from pathlib import Path
 from unittest import TestCase
 
@@ -99,4 +100,19 @@ class TestInformationFinder(TestCase):
 
         pred = info_finder.get_closest_item(self.LABEL_PREDICATE, predicate=True)
         self.assertEqual(pred, [f'{str(InformationFinder.WDT)}{self.PREDICATE}'])
+        self.delete_nt()
+
+    def test_query(self):
+        self.create_nt()
+        info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
+                                        parsed_graph=Path(self.MOCK_GRAPH))
+        query = f'''
+            SELECT ?x WHERE {{
+                ?x <{str(InformationFinder.WDT)}{self.PREDICATE}>  <{str(InformationFinder.WD)}{self.ENTITY_2}> .
+            }}
+        '''
+        response = info_finder.query(query)
+        self.assertIsInstance(response, rdflib.query.Result)
+        for row in response:
+            self.assertEqual(row.x.toPython(), f'{str(InformationFinder.WD)}{self.ENTITY_1}')
         self.delete_nt()

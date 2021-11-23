@@ -3,6 +3,8 @@ import pickle
 import editdistance
 import re
 from enum import Enum
+
+import rdflib
 from pathlib import Path
 
 from rdflib import Graph, Namespace, URIRef
@@ -76,7 +78,7 @@ class InformationFinder:
 
         logging.info('Nodes and predicates retrieved.')
 
-    def get_closest_item(self, input_instance: str, threshold: int = 500, predicate: bool = False) -> str:
+    def get_closest_item(self, input_instance: str, threshold: int = 500, predicate: bool = False) -> list:
         match_node = []
         logging.debug(f"--- entity matching for \"{input_instance}\"\n")
 
@@ -98,6 +100,9 @@ class InformationFinder:
 
         logging.debug(f"Entity matched to \"{input_instance} is {match_node}\"\n")
         return match_node
+
+    def query(self, query: str) -> rdflib.query.Result:
+        return self._g.query(query)
 
 
 class QuestionSolver:
