@@ -24,7 +24,7 @@ class NameEntityRecognitionModel:
                              'shape', 'word', 'tag'}
 
     DATA_SET_PATH = utils.get_data_path('ner.csv')
-    MODEL_PATH = utils.get_data_path('ner.model')
+    MODEL_PATH = utils.get_model_path('ner.model')
 
     @staticmethod
     def load_dataset(dataset: Path, size: int = -1) -> pd.DataFrame:
@@ -44,7 +44,7 @@ class NameEntityRecognitionModel:
         return df[:size]
 
     @staticmethod
-    def extract_features(s: pd.Series) -> list:
+    def extract_features(s: pd.Series) -> dict:
         word = s['word']
         postag = s['pos']
         features = {
@@ -191,12 +191,12 @@ class NameEntityRecognitionModel:
         entity = []
         entities = defaultdict(list)
         tag = ''
-
+        logging.debug(f'Sentence: {sentence}')
+        logging.debug(f'Entities found: {output_model}')
         for idx, val in enumerate(output_model):
             if val[:2] == 'B-':
                 if len(entity) != 0:
                     entities[tag].append(' '.join(entity))
-                    tag = ''
                     entity = []
                 tag = val[2:]
                 entity.append(data.iloc[idx]['word'])
@@ -209,7 +209,5 @@ class NameEntityRecognitionModel:
 
         if len(entity) != 0:
             entities[tag].append(' '.join(entity))
-            tag = ''
-            entity = []
 
         return entities
