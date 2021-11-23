@@ -77,7 +77,7 @@ class InformationFinder:
         logging.info('Nodes and predicates retrieved.')
 
     def get_closest_item(self, input_instance: str, threshold: int = 500, predicate: bool = False) -> str:
-        match_node = ""
+        match_node = []
         logging.debug(f"--- entity matching for \"{input_instance}\"\n")
 
         if predicate:
@@ -87,10 +87,16 @@ class InformationFinder:
 
         for k, v in data.items():
             distance = editdistance.eval(v, input_instance)
-            logging.debug(f"edit distance between {v} and {input_instance}: {distance}")
             if distance < threshold:
                 threshold = distance
-                match_node = k
+                match_node = [k]
+                logging.debug('New min distance')
+                logging.debug(f"edit distance between {v} and {input_instance}: {distance}")
+            elif distance == threshold:
+                match_node.append(k)
+                logging.debug(f"edit distance between {v} and {input_instance}: {distance}")
+
+        logging.debug(f"Entity matched to \"{input_instance} is {match_node}\"\n")
         return match_node
 
 

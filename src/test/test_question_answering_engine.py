@@ -89,7 +89,7 @@ class TestInformationFinder(TestCase):
                                         parsed_graph=Path(self.MOCK_GRAPH))
 
         pred = info_finder.get_closest_item(self.LABEL_ENTITY_1)
-        self.assertEqual(pred, f'{str(InformationFinder.WD)}{self.ENTITY_1}')
+        self.assertEqual(pred, [f'{str(InformationFinder.WD)}{self.ENTITY_1}'])
         self.delete_nt()
 
     def test_get_closest_predicate(self):
@@ -98,5 +98,5 @@ class TestInformationFinder(TestCase):
                                         parsed_graph=Path(self.MOCK_GRAPH))
 
         pred = info_finder.get_closest_item(self.LABEL_PREDICATE, predicate=True)
-        self.assertEqual(pred, f'{str(InformationFinder.WDT)}{self.PREDICATE}')
+        self.assertEqual(pred, [f'{str(InformationFinder.WDT)}{self.PREDICATE}'])
         self.delete_nt()
