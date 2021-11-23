@@ -26,7 +26,7 @@ class InformationFinder:
     RDFS = Namespace('http://www.w3.org/2000/01/rdf-schema#')
 
     RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
-    PROCESSED_GRAPH_PATH = utils.get_data_path('graph.g')
+    PROCESSED_GRAPH_PATH = utils.get_model_path('graph.g')
 
     @classmethod
     def node_is_instance(cls, name: str) -> bool:
