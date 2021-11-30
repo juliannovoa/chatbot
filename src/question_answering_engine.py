@@ -1,6 +1,7 @@
 import logging
 import pickle
 from collections import defaultdict
+from sentence_transformers import SentenceTransformer, util
 
 import editdistance
 import re
@@ -30,6 +31,8 @@ class InformationFinder:
     RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
     PROCESSED_GRAPH_PATH = utils.get_model_path('graph.g')
 
+    SENTENCE_EMBEDDINGS_MODEL = 'all-MiniLM-L6-v2'
+
     @classmethod
     def node_is_instance(cls, name: str) -> bool:
         return name in cls.WD
@@ -40,6 +43,11 @@ class InformationFinder:
 
     def __init__(self, raw_graph: Path = RAW_GRAPH_PATH,
                  parsed_graph: Path = PROCESSED_GRAPH_PATH) -> None:
+
+        logging.info('Load model sentence-embeddings.')
+        self._sentence_embedding = SentenceTransformer(self.SENTENCE_EMBEDDINGS_MODEL)
+        logging.info('Sentence-embeddings model loaded.')
+
         if not parsed_graph.exists():
             logging.info('Graph not available. Start process to parse it.')
             g = Graph()
@@ -59,28 +67,54 @@ class InformationFinder:
         self._predicates = {}
 
         logging.info('Retrieving nodes and predicates.')
+        nodes_description = []
+        nodes = []
+        predicate_description = []
+        predicates = []
         for node in self._g.all_nodes():
             if isinstance(node, URIRef):
                 name = node.toPython()
                 if self.node_is_instance(name) and name not in self._nodes:
+                    nodes.append(name)
                     if self._g.value(node, self.RDFS.label):
-                        self._nodes[name] = self._g.value(node, self.RDFS.label).toPython()
+                        description = self._g.value(node, self.RDFS.label).toPython()
                     else:
-                        self._nodes[name] = re.sub(".*/", "", name)
+                        description = re.sub(".*/", "", name)
+                    self._nodes[name] = {'description': description}
+                    nodes_description.append(description)
+
                 elif self.node_is_predicate(name) and name not in self._predicates:
+                    predicates.append(name)
                     if self._g.value(node, self.RDFS.label):
-                        self._predicates[name] = self._g.value(node, self.RDFS.label).toPython()
+                        description = self._g.value(node, self.RDFS.label).toPython()
                     else:
-                        self._predicates[name] = re.sub(".*/", "", name)
+                        description = re.sub(".*/", "", name)
+                    self._predicates[name] = {'description': description}
+                    predicate_description.append(description)
 
         for _, p, _ in self._g:
             name = p.toPython()
             if self.node_is_predicate(name) and name not in self._predicates:
-                self._predicates[name] = re.sub(".*/", "", name)
+                predicates.append(name)
+                description = re.sub(".*/", "", name)
+                self._predicates[name] = {'description': description}
+                predicate_description.append(description)
+
+        if len(nodes) > 0:
+            for node_name, embedding in zip(nodes, self._sentence_embedding.encode(nodes_description,
+                                                                                   convert_to_tensor=True)):
+                self._nodes[node_name]['embedding'] = embedding
+
+        if len(predicates) > 0:
+            for predicate_name, embedding in zip(predicates, self._sentence_embedding.encode(predicate_description,
+                                                                                             convert_to_tensor=True)):
+                self._predicates[predicate_name]['embedding'] = embedding
+
+
 
         logging.info('Nodes and predicates retrieved.')
 
-    def get_closest_item(self, input_instance: str, threshold: int = 20, predicate: bool = False) -> list:
+    def get_closest_item(self, input_instance: str, threshold: float = 0.5, predicate: bool = False) -> list:
         match_node = []
         logging.debug(f"--- entity matching for \"{input_instance}\"")
 
@@ -89,18 +123,21 @@ class InformationFinder:
         else:
             data = self._nodes
 
-        for k, v in data.items():
-            distance = editdistance.eval(v.lower(), input_instance.lower())
-            if distance < threshold:
-                threshold = distance
-                match_node = [k]
-                logging.debug('New min distance')
-                logging.debug(f"edit distance between {v} and {input_instance}: {distance}")
-            elif distance == threshold:
-                match_node.append(k)
-                logging.debug(f"edit distance between {v} and {input_instance}: {distance}")
+        input_embedding = self._sentence_embedding.encode(input_instance, convert_to_tensor=True)
 
-        logging.debug(f"Entities matched to \"{input_instance}\" is {match_node}")
+        for k, d in data.items():
+            if editdistance.eval(input_instance, d['description']) <= 10:
+                similarity = util.pytorch_cos_sim(input_embedding, d['embedding'])
+                if similarity > threshold:
+                    threshold = similarity
+                    match_node = [k]
+                    logging.debug('New max similarity')
+                    logging.debug(f"edit distance between {d['description']} and {input_instance}: {similarity}")
+                elif similarity == threshold:
+                    match_node.append(k)
+                    logging.debug(f"edit distance between {d['description']} and {input_instance}: {similarity}")
+
+        logging.debug(f"Entities matched to \"{input_instance}\" is/are {match_node}")
         return match_node
 
     def query(self, query: str) -> rdflib.query.Result:
@@ -108,11 +145,11 @@ class InformationFinder:
 
     def get_predicate_description(self, key: str) -> str:
         logging.debug(f'Get predicate description of {key}({type(key)})')
-        return self._predicates[key]
+        return self._predicates[key]['description']
 
     def get_node_description(self, key: str) -> str:
         logging.debug(f'Get node description of {key}({type(key)})')
-        return self._nodes[key]
+        return self._nodes[key]['description']
 
 
 class QuestionSolver:

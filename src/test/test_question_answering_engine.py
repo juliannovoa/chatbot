@@ -35,7 +35,9 @@ class TestInformationFinder(TestCase):
         os.remove(cls.MOCK_FILENAME)
         os.remove(cls.MOCK_GRAPH)
 
-    def test_init_existing_model(self):
+    @patch('sentence_transformers.SentenceTransformer.__init__')
+    def test_init_existing_model(self, sent_transformer):
+        sent_transformer.return_value = None
         graph = Graph()
         graph_path = Path('./mock.graph')
         with open(graph_path, 'wb') as f:
@@ -49,7 +51,9 @@ class TestInformationFinder(TestCase):
         os.remove(graph_path)
 
     @patch('rdflib.Graph.parse')
-    def test_init_not_existing_model(self, parse_graph):
+    @patch('sentence_transformers.SentenceTransformer.__init__')
+    def test_init_not_existing_model(self, sent_transformer, parse_graph):
+        sent_transformer.return_value = None
         parse_graph.return_value = Graph()
         graph_path = Path('./mock.model')
         self.assertFalse(graph_path.exists())
@@ -57,20 +61,26 @@ class TestInformationFinder(TestCase):
         self.assertTrue(graph_path.exists())
         os.remove(graph_path)
 
-    def test_parse_predicates(self):
+    @patch('sentence_transformers.SentenceTransformer.__init__')
+    @patch('sentence_transformers.SentenceTransformer.encode')
+    def test_parse_predicates(self, sent_encoded, sent_transformer):
+        sent_transformer.return_value = None
         self.create_nt()
         info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
                                         parsed_graph=Path(self.MOCK_GRAPH))
-        expected_predicates = {f'{str(InformationFinder.WDT)}{self.PREDICATE}': self.LABEL_PREDICATE}
+        expected_predicates = {f'{str(InformationFinder.WDT)}{self.PREDICATE}': {'description': self.LABEL_PREDICATE}}
         self.assertDictEqual(expected_predicates, info_finder._predicates)
         self.delete_nt()
 
-    def test_parse_instances(self):
+    @patch('sentence_transformers.SentenceTransformer.__init__')
+    @patch('sentence_transformers.SentenceTransformer.encode')
+    def test_parse_instances(self, sent_encoded, sent_transformer):
+        sent_transformer.return_value = None
         self.create_nt()
         info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
                                         parsed_graph=Path(self.MOCK_GRAPH))
-        expected_instances = {f'{str(InformationFinder.WD)}{self.ENTITY_1}': self.LABEL_ENTITY_1,
-                              f'{str(InformationFinder.WD)}{self.ENTITY_2}': self.LABEL_ENTITY_2}
+        expected_instances = {f'{str(InformationFinder.WD)}{self.ENTITY_1}': {'description': self.LABEL_ENTITY_1},
+                              f'{str(InformationFinder.WD)}{self.ENTITY_2}': {'description': self.LABEL_ENTITY_2}}
         self.assertDictEqual(expected_instances, info_finder._nodes)
         self.delete_nt()
 
