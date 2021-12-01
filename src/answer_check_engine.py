@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 
 from src import utils
@@ -79,7 +78,18 @@ class CrowdWorkers:
 
         return {}
 
+    def find_subject(self, question_p, question_o) -> dict:
+        for (s, p, o), v in self.questions.items():
+            if question_p == p and question_o == o:
+                v['subject'] = s
+                return v
 
-cw = CrowdWorkers()
-print(cw.check_question('wd:Q1288004', 'wdt:P1412', 'wd:Q13330'))
+        return {}
 
+    def find_object(self, question_p, question_s) -> dict:
+        for (s, p, o), v in self.questions.items():
+            if question_p == p and question_s == s:
+                v['object'] = o
+                return v
+
+        return {}
