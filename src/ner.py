@@ -1,5 +1,8 @@
 from collections import defaultdict
 
+from transformers import AutoTokenizer, AutoModelForTokenClassification
+from transformers import pipeline
+
 import numpy as np
 from pathlib import Path
 import pandas as pd
@@ -16,7 +19,49 @@ nltk.download('averaged_perceptron_tagger')
 nltk.download('punkt')
 
 
-class NameEntityRecognitionModel:
+class NameNameEntityRecognitionModel:
+    def find_name_entities(self, sentence: str) -> defaultdict:
+        pass
+
+
+class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
+    def __init__(self):
+        tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
+        model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
+
+        self._ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
+
+    def find_name_entities(self, sentence: str) -> defaultdict:
+        logging.debug(f'Sentence: {sentence}')
+        ner_results = self._ner_pipeline(sentence)
+
+        tag = ''
+        begin_position = None
+        end_position = None
+        entities = defaultdict(list)
+
+        for idx, token in enumerate(ner_results):
+            if token['entity'][:2] == 'B-':
+                if end_position is not None:
+                    entities[tag].append(sentence[begin_position:end_position])
+                tag = token['entity'][2:]
+                begin_position = token['start']
+                end_position = token['end']
+            elif token['entity'][:2] == 'I-':
+                end_position = token['end']
+            elif end_position is not None:
+                entities[tag].append(sentence[begin_position:end_position])
+                end_position = None
+
+        if end_position is not None:
+            entities[tag].append(sentence[begin_position:end_position])
+
+        logging.debug(f'Entities found: {entities}')
+
+        return entities
+
+
+class NameEntityRecognitionModelCRF(NameNameEntityRecognitionModel):
     EXPECTED_DATA_COLUMNS = {'lemma', 'next-lemma', 'next-next-lemma', 'next-next-pos', 'next-next-shape',
                              'next-next-word', 'next-pos', 'next-shape', 'next-word', 'pos', 'prev-iob',
                              'prev-lemma', 'prev-pos', 'prev-prev-iob', 'prev-prev-lemma', 'prev-prev-pos',
@@ -81,8 +126,8 @@ class NameEntityRecognitionModel:
 
         return features
 
-    @staticmethod
-    def train_model(dataset: pd.DataFrame) -> sklearn_crfsuite.estimator.CRF:
+    @classmethod
+    def train_model(cls, dataset: pd.DataFrame) -> sklearn_crfsuite.estimator.CRF:
         x = []
         y = []
         sent_x = []
@@ -90,7 +135,7 @@ class NameEntityRecognitionModel:
         sent_idx = 1
         for _, row in dataset.iterrows():
             if row['sentence_idx'] == sent_idx:
-                sent_x.append(NameEntityRecognitionModel.extract_features(row))
+                sent_x.append(cls.extract_features(row))
                 sent_y.append(row['tag'])
             else:
                 x.append(sent_x)
@@ -98,7 +143,7 @@ class NameEntityRecognitionModel:
                 sent_x = []
                 sent_y = []
                 sent_idx = row['sentence_idx']
-                sent_x.append(NameEntityRecognitionModel.extract_features(row))
+                sent_x.append(cls.extract_features(row))
                 sent_y.append(row['tag'])
 
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.1, random_state=0)
@@ -127,9 +172,9 @@ class NameEntityRecognitionModel:
         tokens = nltk.word_tokenize(sent)
         return nltk.tag.pos_tag(tokens)
 
-    @staticmethod
-    def process_input_text(sent: str) -> pd.DataFrame:
-        preprocessed_text = NameEntityRecognitionModel.get_pos_tag(sent)
+    @classmethod
+    def process_input_text(cls, sent: str) -> pd.DataFrame:
+        preprocessed_text = cls.get_pos_tag(sent)
         words = ['__START2__', '__START1__']
         pos_tags = ['__START2__', '__START1__']
         for token, tag in preprocessed_text:
@@ -166,12 +211,12 @@ class NameEntityRecognitionModel:
         if not model_path.exists():
             logging.info('NER is not available. Start process to create it.')
             logging.info('Loading dataset.')
-            df = NameEntityRecognitionModel.load_dataset(dataset.resolve())
+            df = self.load_dataset(dataset.resolve())
             logging.info('Dataset loaded.')
-            if NameEntityRecognitionModel.check_data(df):
+            if self.check_data(df):
                 logging.info('Dataset structure is valid.')
                 logging.info('Start training model.')
-                model = NameEntityRecognitionModel.train_model(df)
+                model = self.train_model(df)
                 with open(model_path.resolve(), 'wb') as f:
                     pickle.dump(model, f)
                     f.close()
@@ -184,8 +229,8 @@ class NameEntityRecognitionModel:
         logging.info('Model loaded')
 
     def find_name_entities(self, sentence: str) -> defaultdict:
-        data = NameEntityRecognitionModel.process_input_text(sentence)
-        input_model = [[NameEntityRecognitionModel.extract_features(row) for _, row in data.iterrows()]]
+        data = self.process_input_text(sentence)
+        input_model = [[self.extract_features(row) for _, row in data.iterrows()]]
         output_model = self._ner_model.predict(input_model)
         output_model = [item for sublist in output_model for item in sublist]
         entity = []
