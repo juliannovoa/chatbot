@@ -1,9 +1,13 @@
 import logging
 import pickle
 import re
-from typing import Any, Mapping, Tuple, List
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any, Mapping, Tuple, List, Set
 
 import editdistance
+import numpy as np
+import pandas as pd
 import rdflib
 from pathlib import Path
 from rdflib import Graph, Namespace, URIRef
@@ -13,6 +17,18 @@ from src import utils
 from src.crowdsourcing import CrowdWorkers
 
 
+def _read_csv(path: Path) -> pd.DataFrame:
+    return pd.read_csv(path.resolve(), index_col=0,
+                       converters={'sentence_embedding': lambda s: np.fromstring(s[1:-1], sep=', ')})
+
+
+@dataclass
+class Fact(object):
+    subject: str
+    predicate: str
+    object: str
+
+
 class KnowledgeGraph:
     WD = Namespace('http://www.wikidata.org/entity/')
     WDT = Namespace('http://www.wikidata.org/prop/direct/')
@@ -20,20 +36,27 @@ class KnowledgeGraph:
     DDIS = Namespace('http://ddis.ch/atai/')
     RDFS = Namespace('http://www.w3.org/2000/01/rdf-schema#')
 
+    SHORT_PREFIX = {
+        WDT: 'wdt:',
+        SCHEMA: 'schema:',
+        DDIS: 'ddis:',
+        WD: 'wd:'
+    }
+
     RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
     PROCESSED_GRAPH_PATH = utils.get_model_path('graph.g')
-    ENTITIES_PATH = utils.get_model_path('entities.pickle')
-    PREDICATES_PATH = utils.get_model_path('predicates.pickle')
+    ENTITIES_PATH = utils.get_model_path('entities.csv')
+    PREDICATES_PATH = utils.get_model_path('predicates.csv')
 
     SENTENCE_EMBEDDINGS_MODEL = 'all-MiniLM-L6-v2'
 
     @classmethod
     def element_is_entity(cls, element) -> bool:
-        return isinstance(element, str) and cls.WD in element
+        return isinstance(element, str) and element.startswith(cls.SHORT_PREFIX[cls.WD])
 
     @classmethod
     def element_is_predicate(cls, element: str) -> bool:
-        return cls.WDT in element or cls.SCHEMA in element or cls.DDIS in element
+        return element.startswith((cls.SHORT_PREFIX[cls.WDT], cls.SHORT_PREFIX[cls.SCHEMA], cls.SHORT_PREFIX[cls.DDIS]))
 
     @classmethod
     def get_short_element_name(cls, node: str) -> str:
@@ -65,10 +88,8 @@ class KnowledgeGraph:
                  parsed_graph: Path = PROCESSED_GRAPH_PATH,
                  parsed_entities: Path = ENTITIES_PATH,
                  parsed_predicates: Path = PREDICATES_PATH) -> None:
-
-        # TODO: sacar de aquí.
         logging.info('Loading crowd workers.')
-        # self._crowd_workers = CrowdWorkers()
+        self._crowd_workers = CrowdWorkers()
         logging.debug('Crowd workers loaded.')
 
         logging.info('Loading SentenceTransformer model.')
@@ -87,78 +108,84 @@ class KnowledgeGraph:
 
         logging.info('Loading knowledge graph.')
         with open(parsed_graph.resolve(), 'rb') as f:
-            self._g = pickle.load(f)
-        logging.debug('Knowledge graph loaded.')
+            self._kg = pickle.load(f)
+        logging.debug(f'Knowledge graph loaded.')
 
         if not parsed_entities.exists() or not parsed_predicates.exists():
-            entities, predicates = self._parse_entities_and_predicates()
-            logging.debug('Saving entities and predicates.')
-            with open(parsed_entities.resolve(), 'wb') as f:
-                pickle.dump(entities, f)
-                del entities
-            with open(parsed_predicates.resolve(), 'wb') as f:
-                pickle.dump(predicates, f)
-                del predicates
+            entities, predicates = self._parse_entities_and_predicates
+            logging.debug('Saving predicates.')
+            predicates.to_csv(parsed_predicates.resolve())
+            del predicates
+            logging.debug('Saving entities.')
+            entities.to_csv(parsed_entities.resolve())
+            del entities
             logging.debug('Entities and predicates saved.')
 
-        logging.info('Loading entities and predicates.')
-        with open(parsed_entities.resolve(), 'rb') as f:
-            self._entities = pickle.load(f)
-        with open(parsed_predicates.resolve(), 'rb') as f:
-            self._predicates = pickle.load(f)
-        logging.debug('Entities and predicates loaded.')
+        logging.debug('Loading predicates.')
+        self._predicates = _read_csv(parsed_predicates)
+        logging.debug('Loading entities.')
+        self._entities = _read_csv(parsed_entities)
+        logging.debug('Entities predicates loaded.')
 
-    def _parse_entities_and_predicates(self) -> Tuple[Mapping, Mapping]:
-        logging.info('Retrieving entities and predicates.')
-        entities = {}
-        predicates = {}
-        entity_labels = []
-        entity_names = []
-        predicate_labels = []
-        predicate_names = []
-        for node in self._g.all_nodes():
+    @property
+    def _parse_entities_and_predicates(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        logging.info('Computing entities and predicates.')
+        entity_labels: List[str] = []
+        entity_names: List[str] = []
+        entity_name_set: Set[str] = set()
+        predicate_labels: List[str] = []
+        predicate_names: List[str] = []
+        predicate_name_set: Set[str] = set()
+        for node in self._kg.all_nodes():
             if not isinstance(node, URIRef):
                 continue
-            name = node.toPython()
-            if self.element_is_entity(name) and name not in entities:
+            name = self.get_short_element_name(node.toPython())
+            if self.element_is_entity(name) and name not in entity_name_set:
+                if self._kg.value(node, self.RDFS.label):
+                    label = self._kg.value(node, self.RDFS.label).toPython()
+                else:
+                    label = re.sub(".*/", "", name)
                 entity_names.append(name)
-                if self._g.value(node, self.RDFS.label):
-                    label = self._g.value(node, self.RDFS.label).toPython()
-                else:
-                    label = re.sub(".*/", "", name)
-                # TODO: shortname se puede calcular a partir de name
-                entities[name] = {'label': label,
-                                  'short_name': self.get_short_element_name(node)}
+                entity_name_set.add(name)
                 entity_labels.append(label)
-            elif self.element_is_predicate(name) and name not in predicates:
-                predicate_names.append(name)
-                if self._g.value(node, self.RDFS.label):
-                    label = self._g.value(node, self.RDFS.label).toPython()
+            elif self.element_is_predicate(name) and name not in predicate_name_set:
+                if self._kg.value(node, self.RDFS.label):
+                    label = self._kg.value(node, self.RDFS.label).toPython()
                 else:
                     label = re.sub(".*/", "", name)
-                # TODO: shortname se puede calcular a partir de name
-                predicates[name] = {'label': label,
-                                    'short_name': self.get_short_element_name(node)}
-                predicate_labels.append(label)
-
-        for _, predicate, _ in self._g:
-            name = predicate.toPython()
-            if self.element_is_predicate(name) and name not in predicates:
                 predicate_names.append(name)
-                label = re.sub(".*/", "", name)
-                predicates[name] = {'label': label,
-                                    'short_name': self.get_short_element_name(predicate)}
+                predicate_name_set.add(name)
                 predicate_labels.append(label)
 
-        logging.debug('Computing entity embeddings.')
-        entity_embeddings = self._sentence_embedding.encode(entity_labels, convert_to_tensor=True)
-        for name, embedding in zip(entity_names, entity_embeddings):
-            entities[name]['embedding'] = embedding
+        for _, predicate, _ in self._kg:
+            name = self.get_short_element_name(predicate.toPython())
+            if self.element_is_predicate(name) and name not in predicate_name_set:
+                label = re.sub(".*/", "", name)
+                predicate_names.append(name)
+                predicate_name_set.add(name)
+                predicate_labels.append(label)
 
         logging.debug('Computing predicate embeddings.')
-        predicate_embeddings = self._sentence_embedding.encode(predicate_labels, convert_to_tensor=True)
-        for name, embedding in zip(predicate_names, predicate_embeddings):
-            predicates[name]['embedding'] = embedding
+        predicate_embeddings = [emb.tolist() for emb in
+                                self._sentence_embedding.encode(predicate_labels, convert_to_numpy=False,
+                                                                normalize_embeddings=True)]
+        logging.debug('Create predicate dataframe.')
+        predicates = pd.DataFrame({'name': predicate_names,
+                                   'label': predicate_labels,
+                                   'sentence_embedding': predicate_embeddings,
+                                   'embedding': None}
+                                  ).set_index('name')
+
+        logging.debug('Computing entity embeddings.')
+        entity_embeddings = [emb.tolist() for emb in
+                             self._sentence_embedding.encode(entity_labels, convert_to_numpy=False,
+                                                             normalize_embeddings=True)]
+        logging.debug('Create entity dataframe.')
+        entities = pd.DataFrame({'name': entity_names,
+                                 'label': entity_labels,
+                                 'sentence_embedding': entity_embeddings,
+                                 'embedding': None}
+                                ).set_index('name')
 
         logging.debug('Entities and predicates retrieved.')
         return entities, predicates
@@ -190,7 +217,7 @@ class KnowledgeGraph:
         return matches
 
     def query(self, query: str) -> rdflib.query.Result:
-        return self._g.query(query)
+        return self._kg.query(query)
 
     def get_node_label(self, node_name: str, is_predicate: bool = False, short_name: bool = False) -> str:
         data = self._predicates if is_predicate else self._entities
@@ -217,7 +244,7 @@ class KnowledgeGraph:
     #         return long_name
 
     # TODO: mover.
-    def get_crowd_information_object(self, predicates: List[str], entities: List[str]) -> Mapping[str, Any]:
+    def find_crowd_question(self, predicates: List[str], entities: List[str]) -> Mapping[str, Any]:
         for predicate in predicates:
             short_predicate = self._predicates[predicate]['short_name']
             for entity in entities:
@@ -225,3 +252,20 @@ class KnowledgeGraph:
                 if data := self._crowd_workers.find_question(short_predicate, short_entity):
                     return data
         return {}
+
+    def _process_query_search(self, query: str, predicates: List[str], entities: List[str], early_stop:bool=False) -> List[Fact]:
+        facts = []
+        for predicate in predicates:
+            for entity in entities:
+                logging.debug(f'Query elements: {predicate}(P:{type(predicate)}) and {entity}(E:{type(entity)})')
+                formatted_query = query.format(e=entity, p=predicate)
+                for row in self._knowledge_graph.query(formatted_query):
+                    obj = row.x.toPython()
+                    try:
+                        subj = row.y.toPython()
+                    except AttributeError:
+                        subj = entity
+                    facts.append(Fact(subj, predicate, obj)
+                if facts and early_stop:
+                    return facts
+        return facts

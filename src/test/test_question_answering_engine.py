@@ -46,7 +46,7 @@ class TestInformationFinder(TestCase):
         information_finder = KnowledgeGraph(parsed_graph=graph_path)
         t2 = os.path.getmtime(graph_path)
         self.assertEqual(t1, t2)
-        self.assertEqual(type(graph), type(information_finder._g))
+        self.assertEqual(type(graph), type(information_finder._kg))
         os.remove(graph_path)
 
     @patch('rdflib.Graph.parse')

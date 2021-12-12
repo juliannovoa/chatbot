@@ -17,4 +17,3 @@ def get_model_path(file: str) -> Path:
 
 def get_data_path(file: str) -> Path:
     return DEFAULT_PATH_RAW_DATA.joinpath(file)
-
