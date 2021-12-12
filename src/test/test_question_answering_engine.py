@@ -1,14 +1,13 @@
 import os
 import pickle
+from unittest import TestCase
 from unittest.mock import patch
 
 import rdflib
 from pathlib import Path
-from unittest import TestCase
-
 from rdflib import Graph
 
-from src.question_answering_engine import InformationFinder
+from src.question_answering_engine import KnowledgeGraph
 
 
 class TestInformationFinder(TestCase):
@@ -24,10 +23,10 @@ class TestInformationFinder(TestCase):
     @classmethod
     def create_nt(cls):
         with open(cls.MOCK_FILENAME, 'w') as f:
-            f.write(f'<{str(InformationFinder.WD)}{cls.ENTITY_1}> ')
-            f.write(f'<{str(InformationFinder.RDFS)}label> \"{cls.LABEL_ENTITY_1}\"@en ;\n')
-            f.write(f'    <{str(InformationFinder.WDT)}{cls.PREDICATE}> ')
-            f.write(f'<{str(InformationFinder.WD)}{cls.ENTITY_2}> .')
+            f.write(f'<{str(KnowledgeGraph.WD)}{cls.ENTITY_1}> ')
+            f.write(f'<{str(KnowledgeGraph.RDFS)}label> \"{cls.LABEL_ENTITY_1}\"@en ;\n')
+            f.write(f'    <{str(KnowledgeGraph.WDT)}{cls.PREDICATE}> ')
+            f.write(f'<{str(KnowledgeGraph.WD)}{cls.ENTITY_2}> .')
         f.close()
 
     @classmethod
@@ -44,7 +43,7 @@ class TestInformationFinder(TestCase):
             pickle.dump(graph, f)
             f.close()
         t1 = os.path.getmtime(graph_path)
-        information_finder = InformationFinder(parsed_graph=graph_path)
+        information_finder = KnowledgeGraph(parsed_graph=graph_path)
         t2 = os.path.getmtime(graph_path)
         self.assertEqual(t1, t2)
         self.assertEqual(type(graph), type(information_finder._g))
@@ -57,7 +56,7 @@ class TestInformationFinder(TestCase):
         parse_graph.return_value = Graph()
         graph_path = Path('./mock.model')
         self.assertFalse(graph_path.exists())
-        InformationFinder(parsed_graph=graph_path)
+        KnowledgeGraph(parsed_graph=graph_path)
         self.assertTrue(graph_path.exists())
         os.remove(graph_path)
 
@@ -66,9 +65,9 @@ class TestInformationFinder(TestCase):
     def test_parse_predicates(self, sent_encoded, sent_transformer):
         sent_transformer.return_value = None
         self.create_nt()
-        info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
-                                        parsed_graph=Path(self.MOCK_GRAPH))
-        expected_predicates = {f'{str(InformationFinder.WDT)}{self.PREDICATE}': {'description': self.LABEL_PREDICATE}}
+        info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
+                                     parsed_graph=Path(self.MOCK_GRAPH))
+        expected_predicates = {f'{str(KnowledgeGraph.WDT)}{self.PREDICATE}': {'description': self.LABEL_PREDICATE}}
         self.assertDictEqual(expected_predicates, info_finder._predicates)
         self.delete_nt()
 
@@ -77,52 +76,52 @@ class TestInformationFinder(TestCase):
     def test_parse_instances(self, sent_encoded, sent_transformer):
         sent_transformer.return_value = None
         self.create_nt()
-        info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
-                                        parsed_graph=Path(self.MOCK_GRAPH))
-        expected_instances = {f'{str(InformationFinder.WD)}{self.ENTITY_1}': {'description': self.LABEL_ENTITY_1},
-                              f'{str(InformationFinder.WD)}{self.ENTITY_2}': {'description': self.LABEL_ENTITY_2}}
-        self.assertDictEqual(expected_instances, info_finder._nodes)
+        info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
+                                     parsed_graph=Path(self.MOCK_GRAPH))
+        expected_instances = {f'{str(KnowledgeGraph.WD)}{self.ENTITY_1}': {'description': self.LABEL_ENTITY_1},
+                              f'{str(KnowledgeGraph.WD)}{self.ENTITY_2}': {'description': self.LABEL_ENTITY_2}}
+        self.assertDictEqual(expected_instances, info_finder._entities)
         self.delete_nt()
 
     def test_node_is_instance(self):
-        self.assertTrue(InformationFinder.node_is_instance('http://www.wikidata.org/entity/Q'))
-        self.assertFalse(InformationFinder.node_is_instance('http://www.wikidata.org/prop/direct/Q'))
+        self.assertTrue(KnowledgeGraph.element_is_entity('http://www.wikidata.org/entity/Q'))
+        self.assertFalse(KnowledgeGraph.element_is_entity('http://www.wikidata.org/prop/direct/Q'))
 
     def test_node_is_predicate(self):
-        self.assertTrue(InformationFinder.node_is_predicate('http://www.wikidata.org/prop/direct/Q'))
-        self.assertTrue(InformationFinder.node_is_predicate('http://ddis.ch/atai/Q'))
-        self.assertTrue(InformationFinder.node_is_predicate('http://schema.org/Q'))
-        self.assertFalse(InformationFinder.node_is_predicate('http://www.wikidata.org/entity/Q'))
+        self.assertTrue(KnowledgeGraph.element_is_predicate('http://www.wikidata.org/prop/direct/Q'))
+        self.assertTrue(KnowledgeGraph.element_is_predicate('http://ddis.ch/atai/Q'))
+        self.assertTrue(KnowledgeGraph.element_is_predicate('http://schema.org/Q'))
+        self.assertFalse(KnowledgeGraph.element_is_predicate('http://www.wikidata.org/entity/Q'))
 
     def test_get_closest_instance(self):
         self.create_nt()
-        info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
-                                        parsed_graph=Path(self.MOCK_GRAPH))
+        info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
+                                     parsed_graph=Path(self.MOCK_GRAPH))
 
-        pred = info_finder.get_closest_item(self.LABEL_ENTITY_1)
-        self.assertEqual(pred, [f'{str(InformationFinder.WD)}{self.ENTITY_1}'])
+        pred = info_finder.get_closest_node(self.LABEL_ENTITY_1)
+        self.assertEqual(pred, [f'{str(KnowledgeGraph.WD)}{self.ENTITY_1}'])
         self.delete_nt()
 
     def test_get_closest_predicate(self):
         self.create_nt()
-        info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
-                                        parsed_graph=Path(self.MOCK_GRAPH))
+        info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
+                                     parsed_graph=Path(self.MOCK_GRAPH))
 
-        pred = info_finder.get_closest_item(self.LABEL_PREDICATE, predicate=True)
-        self.assertEqual(pred, [f'{str(InformationFinder.WDT)}{self.PREDICATE}'])
+        pred = info_finder.get_closest_node(self.LABEL_PREDICATE, predicate=True)
+        self.assertEqual(pred, [f'{str(KnowledgeGraph.WDT)}{self.PREDICATE}'])
         self.delete_nt()
 
     def test_query(self):
         self.create_nt()
-        info_finder = InformationFinder(raw_graph=Path(self.MOCK_FILENAME),
-                                        parsed_graph=Path(self.MOCK_GRAPH))
+        info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
+                                     parsed_graph=Path(self.MOCK_GRAPH))
         query = f'''
             SELECT ?x WHERE {{
-                ?x <{str(InformationFinder.WDT)}{self.PREDICATE}>  <{str(InformationFinder.WD)}{self.ENTITY_2}> .
+                ?x <{str(KnowledgeGraph.WDT)}{self.PREDICATE}>  <{str(KnowledgeGraph.WD)}{self.ENTITY_2}> .
             }}
         '''
         response = info_finder.query(query)
         self.assertIsInstance(response, rdflib.query.Result)
         for row in response:
-            self.assertEqual(row.x.toPython(), f'{str(InformationFinder.WD)}{self.ENTITY_1}')
+            self.assertEqual(row.x.toPython(), f'{str(KnowledgeGraph.WD)}{self.ENTITY_1}')
         self.delete_nt()

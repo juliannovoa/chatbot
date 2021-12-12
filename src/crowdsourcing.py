@@ -1,3 +1,5 @@
+from typing import Mapping, Any
+
 import pandas as pd
 
 from src import utils
@@ -24,9 +26,9 @@ class CrowdWorkers:
         self.filtered_data = self.filter_data(self.data)
         self.kappa_values = {}
         self.questions = {}
-        self.process_data()
+        self._process_data()
 
-    def process_data(self, ):
+    def _process_data(self) -> None:
         batches = self.data['HITTypeId'].unique()
 
         for batch in batches:
@@ -70,26 +72,18 @@ class CrowdWorkers:
 
             self.kappa_values[batch] = (p_i_mean - p_e) / (1 - p_e)
 
-    def check_question(self, s, p, o) -> dict:
-        if (s, p, o) in self.questions:
-            question = self.questions[(s, p, o)]
+    def check_question(self, subject, predicate, obj) -> Mapping[str, Any]:
+        key = (subject, predicate, obj)
+        if key in self.questions:
+            question = self.questions[key]
             question['kappa'] = self.kappa_values[question['batch']]
             return question
-
         return {}
 
-    def find_subject(self, question_p, question_o) -> dict:
-        for (s, p, o), v in self.questions.items():
-            if question_p == p and question_o == o:
-                v['subject'] = s
-                return v
-
+    def find_question(self, question_predicate, question_entity) -> Mapping[str, Any]:
+        for (subject, predicate, obj), question in self.questions.items():
+            if question_predicate == predicate and (question_entity == obj or question_entity == subject):
+                question['kappa'] = self.kappa_values[question['batch']]
+                return question
         return {}
 
-    def find_object(self, question_p, question_s) -> dict:
-        for (s, p, o), v in self.questions.items():
-            if question_p == p and question_s == s:
-                v['object'] = o
-                return v
-
-        return {}

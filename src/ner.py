@@ -1,26 +1,23 @@
+import logging
+import pickle
 from collections import defaultdict
+from typing import Mapping, List
 
+import nltk
+import numpy as np
+import pandas as pd
+import sklearn_crfsuite
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn_crfsuite import metrics
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 from transformers import pipeline
 
-import numpy as np
-from pathlib import Path
-import pandas as pd
-import sklearn_crfsuite
-import pickle
-from sklearn_crfsuite import metrics
-from sklearn.model_selection import train_test_split
-import logging
-import nltk
-
 from src import utils
-
-nltk.download('averaged_perceptron_tagger')
-nltk.download('punkt')
 
 
 class NameNameEntityRecognitionModel:
-    def find_name_entities(self, sentence: str) -> defaultdict:
+    def find_name_entities(self, sentence: str) -> Mapping[str, List[str]]:
         pass
 
 
@@ -31,7 +28,7 @@ class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
 
         self._ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
 
-    def find_name_entities(self, sentence: str) -> defaultdict:
+    def find_name_entities(self, sentence: str) -> Mapping[str, List[str]]:
         logging.debug(f'Sentence: {sentence}')
         ner_results = self._ner_pipeline(sentence)
 
@@ -213,22 +210,21 @@ class NameEntityRecognitionModelCRF(NameNameEntityRecognitionModel):
             logging.info('Loading dataset.')
             df = self.load_dataset(dataset.resolve())
             logging.info('Dataset loaded.')
-            if self.check_data(df):
-                logging.info('Dataset structure is valid.')
-                logging.info('Start training model.')
-                model = self.train_model(df)
-                with open(model_path.resolve(), 'wb') as f:
-                    pickle.dump(model, f)
-                    f.close()
-                logging.info('Model saved.')
-            else:
+            if not self.check_data(df):
                 raise ValueError('Invalid dataset')
+            logging.info('Dataset structure is valid.')
+            logging.info('Start training model.')
+            model = self.train_model(df)
+            with open(model_path.resolve(), 'wb') as f:
+                pickle.dump(model, f)
+                f.close()
+            logging.info('Model saved.')
         with open(model_path.resolve(), 'rb') as f:
             self._ner_model = pickle.load(f)
             f.close()
         logging.info('Model loaded')
 
-    def find_name_entities(self, sentence: str) -> defaultdict:
+    def find_name_entities(self, sentence: str) -> Mapping[str, List[str]]:
         data = self.process_input_text(sentence)
         input_model = [[self.extract_features(row) for _, row in data.iterrows()]]
         output_model = self._ner_model.predict(input_model)

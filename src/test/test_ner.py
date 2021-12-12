@@ -1,12 +1,11 @@
 import os
 import pickle
+from unittest import TestCase
 from unittest.mock import patch, Mock
 
 import pandas as pd
 import sklearn_crfsuite
-
 from pathlib import Path
-from unittest import TestCase
 
 from src.ner import NameEntityRecognitionModel
 

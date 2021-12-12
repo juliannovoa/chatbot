@@ -1,218 +1,259 @@
 import logging
-import pickle
-from collections import defaultdict
-from sentence_transformers import SentenceTransformer, util
-
-import editdistance
+import random
 import re
 from enum import Enum
 
-import rdflib
-from pathlib import Path
+from nltk.corpus import stopwords
+from collections import defaultdict
+from typing import Any, Mapping, Callable
+from nltk.stem import PorterStemmer
+from nltk.tokenize import word_tokenize
 
-from rdflib import Graph, Namespace, URIRef
-
-from src import utils
-from src.ner import NameEntityRecognitionModel
+from src.knowledge_graph import KnowledgeGraph
+from src.ner import NameEntityRecognitionModelBERT
 
 
 class QuestionType(Enum):
-    WHO_OF = '(.*)who (is|are|was|were) (the )?(((?!of).)*) of (the movie )?(.*)'
+    MULTIMEDIA = 1
+    RECOMMENDATION = 2
+    ONE_ENTITY = 3
+    TWO_ENTITIES = 4
     UNK = -1
-
-
-class InformationFinder:
-    WD = Namespace('http://www.wikidata.org/entity/')
-    WDT = Namespace('http://www.wikidata.org/prop/direct/')
-    SCHEMA = Namespace('http://schema.org/')
-    DDIS = Namespace('http://ddis.ch/atai/')
-    RDFS = Namespace('http://www.w3.org/2000/01/rdf-schema#')
-
-    RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
-    PROCESSED_GRAPH_PATH = utils.get_model_path('graph.g')
-
-    SENTENCE_EMBEDDINGS_MODEL = 'all-MiniLM-L6-v2'
-
-    @classmethod
-    def node_is_instance(cls, name: str) -> bool:
-        return name in cls.WD
-
-    @classmethod
-    def node_is_predicate(cls, name: str) -> bool:
-        return name in cls.WDT or name in cls.SCHEMA or name in cls.DDIS
-
-    def __init__(self, raw_graph: Path = RAW_GRAPH_PATH,
-                 parsed_graph: Path = PROCESSED_GRAPH_PATH) -> None:
-
-        logging.info('Load model sentence-embeddings.')
-        self._sentence_embedding = SentenceTransformer(self.SENTENCE_EMBEDDINGS_MODEL)
-        logging.info('Sentence-embeddings model loaded.')
-
-        if not parsed_graph.exists():
-            logging.info('Graph not available. Start process to parse it.')
-            g = Graph()
-            g.parse(raw_graph, format='turtle')
-            with open(parsed_graph.resolve(), 'wb') as f:
-                pickle.dump(g, f)
-                f.close()
-                logging.info('Graph created.')
-
-        logging.info('Loading graph.')
-        with open(parsed_graph.resolve(), 'rb') as f:
-            self._g = pickle.load(f)
-            f.close()
-        logging.info('Graph loaded.')
-
-        self._nodes = {}
-        self._predicates = {}
-
-        logging.info('Retrieving nodes and predicates.')
-        nodes_description = []
-        nodes = []
-        predicate_description = []
-        predicates = []
-        for node in self._g.all_nodes():
-            if isinstance(node, URIRef):
-                name = node.toPython()
-                if self.node_is_instance(name) and name not in self._nodes:
-                    nodes.append(name)
-                    if self._g.value(node, self.RDFS.label):
-                        description = self._g.value(node, self.RDFS.label).toPython()
-                    else:
-                        description = re.sub(".*/", "", name)
-                    self._nodes[name] = {'description': description}
-                    nodes_description.append(description)
-
-                elif self.node_is_predicate(name) and name not in self._predicates:
-                    predicates.append(name)
-                    if self._g.value(node, self.RDFS.label):
-                        description = self._g.value(node, self.RDFS.label).toPython()
-                    else:
-                        description = re.sub(".*/", "", name)
-                    self._predicates[name] = {'description': description}
-                    predicate_description.append(description)
-
-        for _, p, _ in self._g:
-            name = p.toPython()
-            if self.node_is_predicate(name) and name not in self._predicates:
-                predicates.append(name)
-                description = re.sub(".*/", "", name)
-                self._predicates[name] = {'description': description}
-                predicate_description.append(description)
-
-        if len(nodes) > 0:
-            for node_name, embedding in zip(nodes, self._sentence_embedding.encode(nodes_description,
-                                                                                   convert_to_tensor=True)):
-                self._nodes[node_name]['embedding'] = embedding
-
-        if len(predicates) > 0:
-            for predicate_name, embedding in zip(predicates, self._sentence_embedding.encode(predicate_description,
-                                                                                             convert_to_tensor=True)):
-                self._predicates[predicate_name]['embedding'] = embedding
-
-
-
-        logging.info('Nodes and predicates retrieved.')
-
-    def get_closest_item(self, input_instance: str, threshold: float = 0.5, predicate: bool = False) -> list:
-        match_node = []
-        logging.debug(f"--- entity matching for \"{input_instance}\"")
-
-        if predicate:
-            data = self._predicates
-        else:
-            data = self._nodes
-
-        input_embedding = self._sentence_embedding.encode(input_instance, convert_to_tensor=True)
-
-        for k, d in data.items():
-            if editdistance.eval(input_instance, d['description']) <= 10:
-                similarity = util.pytorch_cos_sim(input_embedding, d['embedding'])
-                if similarity > threshold:
-                    threshold = similarity
-                    match_node = [k]
-                    logging.debug('New max similarity')
-                    logging.debug(f"edit distance between {d['description']} and {input_instance}: {similarity}")
-                elif similarity == threshold:
-                    match_node.append(k)
-                    logging.debug(f"edit distance between {d['description']} and {input_instance}: {similarity}")
-
-        logging.debug(f"Entities matched to \"{input_instance}\" is/are {match_node}")
-        return match_node
-
-    def query(self, query: str) -> rdflib.query.Result:
-        return self._g.query(query)
-
-    def get_predicate_description(self, key: str) -> str:
-        logging.debug(f'Get predicate description of {key}({type(key)})')
-        return self._predicates[key]['description']
-
-    def get_node_description(self, key: str) -> str:
-        logging.debug(f'Get node description of {key}({type(key)})')
-        return self._nodes[key]['description']
+    WHO_OF = '(.*)who(\'is|\'re| is| are| was| were) (the )?(((?! of ).)*) of (the movie )?(.*)'
+    WH_OF = '(.*)(what|which|where|when)(\'is|\'re| is| are| was| were) (the )?(((?! of ).)*) of (the movie )?(.*)'
 
 
 class QuestionSolver:
+    EXCUSES = ("Sorry, I didn't get that, could you reformulate your question?",
+               "I am sorry. I did not understand your question. Could you say it in a different way?",
+               "I am not sure if I can help you. Could you ask the question with other words?",
+               "I am still learning. Maybe I can help you if you ask in a different manner :)")
+    RECOMMENDATION_KEYWORDS = ("recommend", "recomend", "suggest", "sugest", "similar")
+    MULTIMEDIA_KEYWORDS = ("pictur", "imag", "poster", "frame")
 
     def __init__(self):
-        self._ner_model = NameEntityRecognitionModel()
-        self._information_finder = InformationFinder()
-        self._questions = {QuestionType.WHO_OF: self.process_who_of_question,
-
-                           }
+        self._ner_model = NameEntityRecognitionModelBERT()
+        self._knowledge_graph = KnowledgeGraph()
+        self._stop_words = set(stopwords.words('english'))
+        self._questions: Mapping[QuestionType, Callable[[str], str]] = {
+            QuestionType.MULTIMEDIA: self._process_multimedia,
+            QuestionType.RECOMMENDATION: self._process_recommendation,
+            QuestionType.WHO_OF: self._process_who_of_question,
+            QuestionType.WH_OF: self._process_wh_of_generic_question,
+            QuestionType.ONE_ENTITY: self._process_one_entity_question,
+            QuestionType.TWO_ENTITIES: self._process_two_entities_question
+        }
 
     @classmethod
-    def get_question_type(cls, question: str) -> QuestionType:
-        question = question.lower().rstrip('?')
-        if re.match(QuestionType.WHO_OF.value, question):
-            return QuestionType.WHO_OF
-
-        return QuestionType.UNK
+    def generate_excuse(cls) -> str:
+        return random.choice(cls.EXCUSES)
 
     def answer_question(self, question: str) -> str:
-        question_type = self.get_question_type(question)
+        question_type = self._get_question_type(question)
         try:
             return self._questions[question_type](question)
         except ValueError:
-            return self.generate_excuse()
+            return self._generate_excuse()
 
-    def process_who_of_question(self, question: str) -> str:
+    def _get_question_type(self, question: str) -> QuestionType:
+        question = question.rstrip('?')
+        # Check if it is a recommendation or multimedia question
+        words = word_tokenize(question)
+        stemmer = PorterStemmer()
+        for word in words:
+            stemmed_word = stemmer.stem(word)
+            if stemmed_word in self.RECOMMENDATION_KEYWORDS:
+                return QuestionType.RECOMMENDATION
+            if stemmed_word in self.MULTIMEDIA_KEYWORDS:
+                return QuestionType.MULTIMEDIA
+
+        # Classify the factual question
+        n_entities = len(self._ner_model.find_name_entities(question))
+        if n_entities == 1:
+            return QuestionType.ONE_ENTITY
+        if n_entities == 2:
+            return QuestionType.TWO_ENTITIES
+        if re.match(QuestionType.WHO_OF.value, question):
+            return QuestionType.WHO_OF
+        if re.match(QuestionType.WH_OF.value, question):
+            return QuestionType.WH_OF
+        return QuestionType.UNK
+
+    def _remove_stop_words(self, sentence: str) -> str:
+        word_tokens = word_tokenize(sentence)
+        filtered_sentence = [w for w in word_tokens if not w.lower() in self._stop_words]
+        return ' '.join(filtered_sentence)
+
+    def _process_multimedia(self, question: str) -> str:
+        return question
+
+    def _process_recommendation(self, question: str) -> str:
+        return question
+
+    def _process_one_entity_question(self, question: str) -> str:
+        logging.debug(f'Processing one entity question')
+        question = question.rstrip('?')
+        ner_result = self._ner_model.find_name_entities(question)
+        entities = list(ner_result.values())[0]
+        for entity in entities:
+            question = re.sub(entity, '', question)
+        question = self._remove_stop_words(question)
+        predicates = self._knowledge_graph.get_closest_node(question, predicate=True)
+        joined_entity = " ".join(entities)
+        kg_entities = self._knowledge_graph.get_closest_node(joined_entity)
+        logging.debug(f'Entities: {kg_entities}')
+        logging.debug(f'Predicates: {predicates}')
+        logging.debug(f'Search crowd information')
+
+        if crowd_question := self._knowledge_graph.get_crowd_information_object(predicates, kg_entities):
+            return self._process_crowd_question(crowd_question)
+
+        logging.debug(f'Crowd information not found')
+        query = '''
+            PREFIX ddis: <http://ddis.ch/atai/> 
+            PREFIX wd: <http://www.wikidata.org/entity/> 
+            PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+            PREFIX schema: <http://schema.org/> 
+            SELECT DISTINCT ?x WHERE {{ 
+                <{e}> <{p}> ?x .
+            }}
+        '''
+        if information := self._process_query_search(query, predicates, entities):
+            return self.process_response(information)
+
+        # TODO: usar embeddings.
+
+        raise ValueError('No answer for this question')
+
+    def _process_two_entities_question(self, question: str) -> str:
+        question = question.rstrip('?')
+        entities = self._ner_model.find_name_entities(question)
+        items = []
+        for k, v in entities.items():
+            for entity in v:
+                question = re.sub(entity, '', question)
+            items.append(' '.join(v))
+
+        predicates = self._knowledge_graph.get_closest_node(self._remove_stop_words(question), predicate=True)
+        entities = defaultdict(list)
+        for idx, item in enumerate(items):
+            for entity in self._knowledge_graph.get_closest_node(item):
+                entities[idx].append(entity)
+
+        logging.debug(f'Processing two entity question')
+        logging.debug(f'Entities: {entities}')
+        logging.debug(f'Predicates: {predicates}')
+
+        # logging.debug(f'Search crowd information')
+        # crowd_information = self._knowledge_graph.get_crowd_information_object(predicates, entities)
+        # if len(crowd_information) != 0:
+        #     return self.process_crowd_information(crowd_information)
+        # logging.debug(f'Crowd information not found')
+        query = '''
+            PREFIX ddis: <http://ddis.ch/atai/> 
+            PREFIX wd: <http://www.wikidata.org/entity/> 
+            PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+            PREFIX schema: <http://schema.org/> 
+            SELECT DISTINCT ?x WHERE {{ 
+                <{e1}> <{p}> ?x .
+            }}
+        '''
+        information = self._process_query_search(query, predicates, entities)
+
+        if len(information) == 0:
+            return self._generate_excuse()
+        else:
+            return self.process_response(information)
+
+    def _process_wh_of_generic_question(self, question: str) -> str:
+        question = question.lower().rstrip('?')
+        match = re.match(QuestionType.WH_OF.value, question)
+        if match is None:
+            raise ValueError('Invalid question')
+        predicates = self._knowledge_graph.get_closest_node(match.group(5), predicate=True)
+        entities = self._knowledge_graph.get_closest_node(match.group(8))
+        logging.debug(f'Entities: {entities}')
+        logging.debug(f'Predicates: {predicates}')
+        logging.debug(f'Search crowd information')
+        crowd_information = self._knowledge_graph.get_crowd_information_object(predicates, entities)
+        if len(crowd_information) != 0:
+            return self._process_crowd_question(crowd_information)
+        logging.debug(f'Crowd information not found')
+        query = '''
+            PREFIX ddis: <http://ddis.ch/atai/> 
+            PREFIX wd: <http://www.wikidata.org/entity/> 
+            PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+            PREFIX schema: <http://schema.org/> 
+            SELECT DISTINCT ?x WHERE {{ 
+                <{e}> <{p}> ?x .
+            }}
+        '''
+        information = self._process_query_search(query, predicates, entities)
+
+        if len(information) == 0:
+            logging.debug('Information not found. Trying second degree search')
+            query = '''
+                PREFIX ddis: <http://ddis.ch/atai/> 
+                PREFIX wd: <http://www.wikidata.org/entity/> 
+                PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                PREFIX schema: <http://schema.org/> 
+                SELECT DISTINCT ?x ?y WHERE {{
+                    <{e}> ?a ?y . 
+                    ?y <{p}> ?x .
+                }}
+            '''
+            information = self._process_query_search(query, predicates, entities, True)
+        if len(information) == 0:
+            return self._generate_excuse()
+        else:
+            return self.process_response(information)
+
+    def _process_who_of_question(self, question: str) -> str:
         question = question.lower().rstrip('?')
         match = re.match(QuestionType.WHO_OF.value, question)
         if match is None:
             raise ValueError('Invalid question')
-        predicates = self._information_finder.get_closest_item(match.group(4), predicate=True)
-        entities = self._information_finder.get_closest_item(match.group(7))
+        predicates = self._knowledge_graph.get_closest_node(match.group(4), predicate=True)
+        entities = self._knowledge_graph.get_closest_node(match.group(7))
         logging.debug(f'Entities: {entities}')
         logging.debug(f'Predicates: {predicates}')
+        logging.debug(f'Search crowd information')
+        crowd_information = self._knowledge_graph.get_crowd_information_object(predicates, entities)
+        if len(crowd_information) != 0:
+            return self._process_crowd_question(crowd_information)
+        logging.debug(f'Crowd information not found')
         query = '''
-            PREFIX wdt: <http://www.wikidata.org/prop/direct/>
-            PREFIX wd: <http://www.wikidata.org/entity/>
+            PREFIX ddis: <http://ddis.ch/atai/> 
+            PREFIX wd: <http://www.wikidata.org/entity/> 
+            PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+            PREFIX schema: <http://schema.org/> 
             SELECT DISTINCT ?x WHERE {{ 
                 <{e}> <{p}> ?x .
                 ?x wdt:P31 wd:Q5. 
             }}
         '''
-        information = self.process_query(query, predicates, entities)
+        information = self._process_query_search(query, predicates, entities)
 
         if len(information) == 0:
             logging.debug('Information not found. Trying second degree search')
             query = '''
-                PREFIX wdt: <http://www.wikidata.org/prop/direct/>
-                PREFIX wd: <http://www.wikidata.org/entity/>
+                PREFIX ddis: <http://ddis.ch/atai/> 
+                PREFIX wd: <http://www.wikidata.org/entity/> 
+                PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                PREFIX schema: <http://schema.org/> 
                 SELECT DISTINCT ?x ?y WHERE {{
                     <{e}> ?a ?y . 
                     ?y <{p}> ?x .
                     ?x wdt:P31 wd:Q5.  
                 }}
             '''
-            information = self.process_query(query, predicates, entities, True)
+            information = self._process_query_search(query, predicates, entities, True)
         if len(information) == 0:
-            return self.generate_excuse()
+            return self._generate_excuse()
         else:
             return self.process_response(information)
 
-    def process_query(self, query: str, predicates: list, entities: list, early_stop=False) -> defaultdict[set]:
+    def _process_query_search(self, query: str, predicates: list, entities: list, early_stop=False) -> defaultdict[set]:
         information = defaultdict(set)
         logging.debug('Start query.')
         logging.debug(f'Entities: {entities}')
@@ -221,13 +262,36 @@ class QuestionSolver:
             for entity in entities:
                 logging.debug(f'Query elements: {predicate}(P:{type(predicate)}) and {entity}(E:{type(entity)})')
                 formatted_query = query.format(e=entity, p=predicate)
-                for row in self._information_finder.query(formatted_query):
-                    subj = row.x.toPython()
+                for row in self._knowledge_graph.query(formatted_query):
+                    obj = row.x.toPython()
                     try:
-                        obj = row.y.toPython()
+                        subj = row.y.toPython()
                     except AttributeError:
-                        obj = entity
-                    information[(obj, predicate)].add(subj)
+                        subj = entity
+                    information[(subj, predicate)].add(obj)
+                if len(information) >= 1 and early_stop:
+                    return information
+
+        return information
+
+    def process_query_check(self, query: str, predicates: list, entities_1: list, entities_2: list,
+                            early_stop=True) -> bool:
+        information = defaultdict(set)
+        logging.debug('Start query.')
+        logging.debug(f'Entities 1: {entities_1}')
+        logging.debug(f'Entities 2: {entities_2}')
+        logging.debug(f'Predicates: {predicates}')
+        for predicate in predicates:
+            for entity_1 in entities_1:
+                for entity_2 in entities_2:
+                    formatted_query = query.format(e=entity, p=predicate)
+                for row in self._knowledge_graph.query(formatted_query):
+                    obj = row.x.toPython()
+                    try:
+                        subj = row.y.toPython()
+                    except AttributeError:
+                        subj = entity
+                    information[(subj, predicate)].add(obj)
                 if len(information) >= 1 and early_stop:
                     return information
 
@@ -235,19 +299,22 @@ class QuestionSolver:
 
     def process_response(self, information: defaultdict) -> str:
         output = []
-        for (o, p), s in information.items():
-            predicate = self._information_finder.get_predicate_description(p)
-            obj = self._information_finder.get_node_description(o)
-            description = self.get_film_description(o)
-            if len(s) == 1:
-                for it in s:
-                    item = self._information_finder.get_node_description(it)
-                    output.append(f'{item} is the {predicate} of {obj}{description}')
+        for (s, p), o in information.items():
+            predicate = self._knowledge_graph.get_node_label(p, is_predicate=True)
+            subj = self._knowledge_graph.get_node_label(s)
+            description = self.get_film_description(s)
+            if len(o) == 1:
+                for it in o:
+                    if self._knowledge_graph.element_is_entity(it):
+                        obj = self._knowledge_graph.get_node_label(it)
+                    else:
+                        obj = it
+                    output.append(f'{obj} is the {predicate} of {subj}{description}')
             else:
-                output.append(f'The {predicate}s of {obj}{description} are:')
-                for it in s:
-                    item = self._information_finder.get_node_description(it)
-                    output.append(f'   {item}')
+                output.append(f'The {predicate}s of {subj}{description} are:')
+                for it in o:
+                    obj = self._knowledge_graph.get_node_description(it)
+                    output.append(f'   {obj}')
 
         return '\n'.join(output)
 
@@ -260,7 +327,7 @@ class QuestionSolver:
                 '''
         logging.debug('Start description query.')
 
-        for row in self._information_finder.query(query):
+        for row in self._knowledge_graph.query(query):
             date = row.x.toPython()
             if isinstance(date, int):
                 return f'({date})'
@@ -273,11 +340,45 @@ class QuestionSolver:
                         <{film}> ns2:description ?x . 
                     }}
                 '''
-        for row in self._information_finder.query(query):
+        for row in self._knowledge_graph.query(query):
             return f'({row.x.toPython()})'
 
         return ''
 
-    def generate_excuse(self) -> str:
-        # TODO: implement function
-        return "I don't know"
+    def _process_crowd_question(self, crowd_question: Mapping[str, Any]) -> str:
+        subject = self._knowledge_graph.get_node_label(crowd_question['subject'], is_predicate=False, short_name=True)
+        predicate = self._knowledge_graph.get_node_label(crowd_question['predicate'], is_predicate=True,
+                                                         short_name=True)
+        obj = self._knowledge_graph.get_node_label(crowd_question['object'], is_predicate=False, short_name=True)
+
+        n_correct = crowd_question['n_correct']
+        n_incorrect = crowd_question['n_incorrect']
+        output = [
+            f'{obj} is the {predicate} of {subject}.',
+            f'The crowd had an inter-rate agreement of {crowd_question["kappa"]} in this batch.'
+        ]
+        if n_incorrect > n_correct:
+            output.append(f'The crowd thinks this answer is incorrect '
+                          '({n_correct} votes for correct and {n_incorrect} votes for incorrect).')
+            if crowd_question['mistake_position'] == 'Predicate':
+                output.append(f'Someone has said that the wrong information is {predicate}.')
+                if crowd_question['right_label']:
+                    new_pred = self._knowledge_graph.get_node_label(
+                        crowd_question['right_label'], is_predicate=True, short_name=True)
+                    output.append(f'They think that {obj} is the {new_pred} of {subject}.')
+            elif crowd_question['mistake_position'] == 'Object':
+                output.append(f'Someone has said that the wrong information is {obj}.')
+                if crowd_question['right_label']:
+                    new_obj = self._knowledge_graph.get_node_label(
+                        crowd_question['right_label'], is_predicate=False, short_name=True)
+                    output.append(f'They think that {new_obj} is the {predicate} of {subject}.')
+            elif crowd_question['mistake_position'] == 'Subject':
+                output.append(f'Someone has said that the wrong information is {subject}.')
+                if crowd_question['right_label']:
+                    new_subj = self._knowledge_graph.get_node_label(
+                        crowd_question['right_label'], is_predicate=False, short_name=True)
+                    output.append(f'They think that {obj} is the {predicate} of {new_subj}.')
+        elif n_incorrect <= n_correct:
+            output.append(f'The crowd thinks this answer is correct '
+                          '({n_correct} votes for correct and {n_incorrect} votes for incorrect).')
+        return '\n'.join(output)
