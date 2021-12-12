@@ -22,7 +22,7 @@ class KnowledgeGraph:
 
     RAW_GRAPH_PATH = utils.get_data_path('14_graph.nt')
     PROCESSED_GRAPH_PATH = utils.get_model_path('graph.g')
-    ENTITIES_PATH = utils.get_data_path('entities.pickle')
+    ENTITIES_PATH = utils.get_model_path('entities.pickle')
     PREDICATES_PATH = utils.get_model_path('predicates.pickle')
 
     SENTENCE_EMBEDDINGS_MODEL = 'all-MiniLM-L6-v2'
@@ -67,40 +67,46 @@ class KnowledgeGraph:
                  parsed_predicates: Path = PREDICATES_PATH) -> None:
 
         # TODO: sacar de aquí.
-        logging.info('Load crowd workers.')
-        self._crowd_workers = CrowdWorkers()
-        logging.info('Crowd workers loaded.')
+        logging.info('Loading crowd workers.')
+        # self._crowd_workers = CrowdWorkers()
+        logging.debug('Crowd workers loaded.')
 
-        logging.info('Load model sentence-embeddings.')
+        logging.info('Loading SentenceTransformer model.')
         self._sentence_embedding = SentenceTransformer(self.SENTENCE_EMBEDDINGS_MODEL)
-        logging.info('Sentence-embeddings model loaded.')
+        logging.debug('Sentence-embeddings model loaded.')
 
         if not parsed_graph.exists():
-            logging.info('Graph not available. Start process to parse it.')
+            logging.info('Knowledge graph not available. Start process to parse it.')
             g = Graph()
             g.parse(raw_graph, format='turtle')
             with open(parsed_graph.resolve(), 'wb') as f:
+                logging.debug('Saving knowledge graph.')
                 pickle.dump(g, f)
-                logging.info('Graph created.')
+                del g
+                logging.debug('Knowledge graph saved.')
 
-        logging.info('Loading graph.')
+        logging.info('Loading knowledge graph.')
         with open(parsed_graph.resolve(), 'rb') as f:
             self._g = pickle.load(f)
-        logging.info('Graph loaded.')
+        logging.debug('Knowledge graph loaded.')
 
         if not parsed_entities.exists() or not parsed_predicates.exists():
             entities, predicates = self._parse_entities_and_predicates()
+            logging.debug('Saving entities and predicates.')
             with open(parsed_entities.resolve(), 'wb') as f:
                 pickle.dump(entities, f)
+                del entities
             with open(parsed_predicates.resolve(), 'wb') as f:
                 pickle.dump(predicates, f)
+                del predicates
+            logging.debug('Entities and predicates saved.')
 
         logging.info('Loading entities and predicates.')
         with open(parsed_entities.resolve(), 'rb') as f:
             self._entities = pickle.load(f)
         with open(parsed_predicates.resolve(), 'rb') as f:
             self._predicates = pickle.load(f)
-        logging.info('Entities and predicates loaded.')
+        logging.debug('Entities and predicates loaded.')
 
     def _parse_entities_and_predicates(self) -> Tuple[Mapping, Mapping]:
         logging.info('Retrieving entities and predicates.')
@@ -144,15 +150,17 @@ class KnowledgeGraph:
                                     'short_name': self.get_short_element_name(predicate)}
                 predicate_labels.append(label)
 
+        logging.debug('Computing entity embeddings.')
         entity_embeddings = self._sentence_embedding.encode(entity_labels, convert_to_tensor=True)
         for name, embedding in zip(entity_names, entity_embeddings):
             entities[name]['embedding'] = embedding
 
+        logging.debug('Computing predicate embeddings.')
         predicate_embeddings = self._sentence_embedding.encode(predicate_labels, convert_to_tensor=True)
         for name, embedding in zip(predicate_names, predicate_embeddings):
             predicates[name]['embedding'] = embedding
 
-        logging.info('Entities and predicates retrieved.')
+        logging.debug('Entities and predicates retrieved.')
         return entities, predicates
 
     def get_closest_node(self, query: str, embedding_threshold: float = 0.5,
