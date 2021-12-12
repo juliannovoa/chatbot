@@ -15,6 +15,7 @@ from src.crowdsourcing import CrowdQuestion
 from src.knowledge_graph import KnowledgeGraph
 from src.multimedia import Multimedia
 from src.ner import NameEntityRecognitionModelBERT
+from src.utils import remove_stop_words
 
 
 class QuestionType(Enum):
@@ -86,11 +87,6 @@ class QuestionSolver:
             return QuestionType.WH_OF
         return QuestionType.UNK
 
-    def _remove_stop_words(self, sentence: str) -> str:
-        word_tokens = word_tokenize(sentence)
-        filtered_sentence = [w for w in word_tokens if not w.lower() in self._stop_words]
-        return ' '.join(filtered_sentence)
-
     def _process_multimedia(self, question: str) -> str:
         return self._multimedia.process_question(question)
 
@@ -104,7 +100,7 @@ class QuestionSolver:
         named_entities = list(ner_result.values())[0]
         for named_entity in named_entities:
             question = re.sub(named_entity, '', question)
-        clean_question = self._remove_stop_words(question)
+        clean_question = remove_stop_words(self._stop_words, question)
 
         entities = self._knowledge_graph.find_closest_node(" ".join(named_entities), predicate=False)
         predicates = self._knowledge_graph.find_closest_node(clean_question, predicate=True)
@@ -127,10 +123,11 @@ class QuestionSolver:
         logging.debug(f'Processing two entity question')
         question = question.rstrip('?')
         ner_result = self._ner_model.find_name_entities(question)
+
         for named_entities in ner_result.values():
             for named_entity in named_entities:
                 question = re.sub(named_entity, '', question)
-        clean_question = self._remove_stop_words(question)
+        clean_question = remove_stop_words(self._stop_words, question)
         predicates = self._knowledge_graph.find_closest_node(clean_question, predicate=True)
         entities1 = self._knowledge_graph.find_closest_node(" ".join(list(ner_result.values())[0]), predicate=False)
         entities2 = self._knowledge_graph.find_closest_node(" ".join(list(ner_result.values())[1]), predicate=False)
