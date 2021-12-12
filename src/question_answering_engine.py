@@ -1,15 +1,16 @@
 import logging
 import random
 import re
+from collections import defaultdict
 from enum import Enum
+from typing import Any, Mapping, Callable
 
 from nltk.corpus import stopwords
-from collections import defaultdict
-from typing import Any, Mapping, Callable
 from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
 
 from src.knowledge_graph import KnowledgeGraph
+from src.multimedia import Multimedia
 from src.ner import NameEntityRecognitionModelBERT
 
 
@@ -34,6 +35,7 @@ class QuestionSolver:
     def __init__(self):
         self._ner_model = NameEntityRecognitionModelBERT()
         self._knowledge_graph = KnowledgeGraph()
+        self._multimedia = Multimedia()
         self._stop_words = set(stopwords.words('english'))
         self._questions: Mapping[QuestionType, Callable[[str], str]] = {
             QuestionType.MULTIMEDIA: self._process_multimedia,
@@ -45,7 +47,7 @@ class QuestionSolver:
         }
 
     @classmethod
-    def generate_excuse(cls) -> str:
+    def _generate_excuse(cls) -> str:
         return random.choice(cls.EXCUSES)
 
     def answer_question(self, question: str) -> str:
@@ -85,7 +87,7 @@ class QuestionSolver:
         return ' '.join(filtered_sentence)
 
     def _process_multimedia(self, question: str) -> str:
-        return question
+        return self._multimedia.process_question(question)
 
     def _process_recommendation(self, question: str) -> str:
         return question
@@ -94,18 +96,20 @@ class QuestionSolver:
         logging.debug(f'Processing one entity question')
         question = question.rstrip('?')
         ner_result = self._ner_model.find_name_entities(question)
-        entities = list(ner_result.values())[0]
-        for entity in entities:
-            question = re.sub(entity, '', question)
-        question = self._remove_stop_words(question)
-        predicates = self._knowledge_graph.get_closest_node(question, predicate=True)
-        joined_entity = " ".join(entities)
-        kg_entities = self._knowledge_graph.get_closest_node(joined_entity)
-        logging.debug(f'Entities: {kg_entities}')
+        named_entities = list(ner_result.values())[0]
+        for named_entity in named_entities:
+            question = re.sub(named_entity, '', question)
+        clean_question = self._remove_stop_words(question)
+
+        entities = self._knowledge_graph.get_closest_node(" ".join(named_entities), predicate=False)
+        predicates = self._knowledge_graph.get_closest_node(clean_question, predicate=True)
+
+        logging.debug(f'Entities: {entities}')
         logging.debug(f'Predicates: {predicates}')
+
         logging.debug(f'Search crowd information')
 
-        if crowd_question := self._knowledge_graph.get_crowd_information_object(predicates, kg_entities):
+        if crowd_question := self._knowledge_graph.get_crowd_information_object(predicates, entities):
             return self._process_crowd_question(crowd_question)
 
         logging.debug(f'Crowd information not found')
@@ -127,14 +131,12 @@ class QuestionSolver:
 
     def _process_two_entities_question(self, question: str) -> str:
         question = question.rstrip('?')
-        entities = self._ner_model.find_name_entities(question)
-        items = []
-        for k, v in entities.items():
-            for entity in v:
-                question = re.sub(entity, '', question)
-            items.append(' '.join(v))
-
-        predicates = self._knowledge_graph.get_closest_node(self._remove_stop_words(question), predicate=True)
+        ner_result = self._ner_model.find_name_entities(question)
+        entities = list(ner_result.values())[0]
+        for entity in entities:
+            question = re.sub(entity, '', question)
+        question = self._remove_stop_words(question)
+        predicates = self._knowledge_graph.get_closest_node(question, predicate=True)
         entities = defaultdict(list)
         for idx, item in enumerate(items):
             for entity in self._knowledge_graph.get_closest_node(item):
@@ -158,12 +160,9 @@ class QuestionSolver:
                 <{e1}> <{p}> ?x .
             }}
         '''
-        information = self._process_query_search(query, predicates, entities)
-
-        if len(information) == 0:
-            return self._generate_excuse()
-        else:
+        if information := self._process_query_search(query, predicates, entities):
             return self.process_response(information)
+        return self._generate_excuse()
 
     def _process_wh_of_generic_question(self, question: str) -> str:
         question = question.lower().rstrip('?')
