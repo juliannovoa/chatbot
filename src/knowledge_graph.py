@@ -1,32 +1,22 @@
 import logging
 import pickle
 import re
-from collections import defaultdict
-from dataclasses import dataclass
-from typing import Any, Mapping, Tuple, List, Set
+from typing import Tuple, List, Set, Optional
 
 import editdistance
 import numpy as np
 import pandas as pd
-import rdflib
 from pathlib import Path
 from rdflib import Graph, Namespace, URIRef
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
 
-from src import utils
-from src.crowdsourcing import CrowdWorkers
+from src import utils, Fact
+from src.crowdsourcing import CrowdWorkers, CrowdQuestion
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path.resolve(), index_col=0,
                        converters={'sentence_embedding': lambda s: np.fromstring(s[1:-1], sep=', ')})
-
-
-@dataclass
-class Fact(object):
-    subject: str
-    predicate: str
-    object: str
 
 
 class KnowledgeGraph:
@@ -190,43 +180,46 @@ class KnowledgeGraph:
         logging.debug('Entities and predicates retrieved.')
         return entities, predicates
 
-    def get_closest_node(self, query: str, embedding_threshold: float = 0.5,
-                         edit_distance_threshold: int = 100, predicate: bool = False) -> List[str]:
+    def find_closest_node(self, query: str, embedding_threshold: float = 0.35,
+                          edit_distance_threshold: int = 100, predicate: bool = False) -> List[str]:
         logging.debug(f'--- entity matching for "{query}"')
         if predicate:
-            data = self._predicates
+            df = self._predicates
         else:
-            data = self._entities
+            df = self._entities
             edit_distance_threshold = 10
             embedding_threshold = 0.25
-        query_embedding = self._sentence_embedding.encode(query, convert_to_tensor=True)
-        matches = []
-        for name, node in data.items():
-            if editdistance.eval(query, node['description']) > edit_distance_threshold:
-                continue
-            similarity = util.pytorch_cos_sim(query_embedding, node['embedding'])
-            if similarity > embedding_threshold:
-                embedding_threshold = similarity
-                matches = [name]
-                logging.debug('New max similarity')
-                logging.debug(f"edit distance between {node['description']} and {query}: {similarity}")
-            elif similarity == embedding_threshold:
-                matches.append(name)
-                logging.debug(f"edit distance between {node['description']} and {query}: {similarity}")
-        logging.debug(f'Entities matched to "{query}" are {matches}')
+        query_embedding = self._sentence_embedding.encode(query)
+        # Filter candidates by edit distance.
+        candidates = df[df.label.apply(lambda x: int(editdistance.eval(query, x)) <= edit_distance_threshold)]
+        # Select candidates by cosine similarity (= dot product when vectors are normalized).
+        sim = candidates['sentence_embedding'].apply(lambda x: query_embedding.dot(x))
+        max_sim = sim.values.max()
+        if max_sim < embedding_threshold:
+            logging.debug('Similarity too low')
+            return []
+        matches = candidates[sim.values == max_sim].index.tolist()
+        # for name, node in df.items():
+        #     if editdistance.eval(query, node['description']) > edit_distance_threshold:
+        #         continue
+        #     similarity = util.pytorch_cos_sim(query_embedding, node['embedding'])
+        #     if similarity > embedding_threshold:
+        #         embedding_threshold = similarity
+        #         matches = [name]
+        #         logging.debug('New max similarity')
+        #         logging.debug(f"edit distance between {node['description']} and {query}: {similarity}")
+        #     elif similarity == embedding_threshold:
+        #         matches.append(name)
+        #         logging.debug(f"edit distance between {node['description']} and {query}: {similarity}")
+        logging.debug(f'{"Predicates" if predicate else "Entities"} matched to "{query}" are {matches}')
         return matches
 
-    def query(self, query: str) -> rdflib.query.Result:
-        return self._kg.query(query)
-
-    def get_node_label(self, node_name: str, is_predicate: bool = False, short_name: bool = False) -> str:
+    def get_node_label(self, name: str, is_predicate: bool = False) -> str:
         data = self._predicates if is_predicate else self._entities
-        key = self.extend_element_name(node_name) if short_name else node_name
-        logging.debug(f'Get node label of {key}({type(key)})')
-        if not is_predicate and not self.element_is_entity(key):
+        if not is_predicate and not self.element_is_entity(name):
             # key is a literal
-            return key
-        return data[key]['label']
+            return name
+        return data.loc[name]['label']
 
     # def get_node_description(self, key: str) -> str:
     #     logging.debug(f'Get node description of {key}({type(key)})')
@@ -243,29 +236,110 @@ class KnowledgeGraph:
     #     else:
     #         return long_name
 
-    # TODO: mover.
-    def find_crowd_question(self, predicates: List[str], entities: List[str]) -> Mapping[str, Any]:
+    def find_crowd_question(self, predicates: List[str], entities: List[str]) -> Optional[CrowdQuestion]:
         for predicate in predicates:
-            short_predicate = self._predicates[predicate]['short_name']
             for entity in entities:
-                short_entity = self._entities[entity]['short_name']
-                if data := self._crowd_workers.find_question(short_predicate, short_entity):
+                if data := self._crowd_workers.find_question_one_entity(predicate, entity):
                     return data
-        return {}
+        return None
 
-    def _process_query_search(self, query: str, predicates: List[str], entities: List[str], early_stop:bool=False) -> List[Fact]:
+    def find_crowd_question_two_entities(self, predicates: List[str], entities1: List[str], entities2: List[str]) -> \
+            Optional[CrowdQuestion]:
+        for predicate in predicates:
+            for entity1 in entities1:
+                for entity2 in entities2:
+                    if data := self._crowd_workers.find_question_two_entities(predicate, entity1, entity2):
+                        return data
+        return None
+
+    def find_facts(self, predicates: List[str], entities: List[str]) -> List[Fact]:
+        logging.debug(f'Query: predicates={predicates} and entities={entities})')
         facts = []
+        obj_query = '''
+                        PREFIX ddis: <http://ddis.ch/atai/> 
+                        PREFIX wd: <http://www.wikidata.org/entity/> 
+                        PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                        PREFIX schema: <http://schema.org/> 
+                        SELECT DISTINCT ?x WHERE {{ 
+                            {e} {p} ?x .
+                        }}
+                    '''
         for predicate in predicates:
             for entity in entities:
-                logging.debug(f'Query elements: {predicate}(P:{type(predicate)}) and {entity}(E:{type(entity)})')
-                formatted_query = query.format(e=entity, p=predicate)
-                for row in self._knowledge_graph.query(formatted_query):
+                formatted_query = obj_query.format(e=entity, p=predicate)
+                for row in self._kg.query(formatted_query):
                     obj = row.x.toPython()
-                    try:
-                        subj = row.y.toPython()
-                    except AttributeError:
-                        subj = entity
-                    facts.append(Fact(subj, predicate, obj)
-                if facts and early_stop:
-                    return facts
+                    if self.element_is_entity(obj):
+                        obj = self.get_short_element_name(obj)
+                    facts.append(Fact(entity, predicate, obj))
+
+        subject_query = '''
+                            PREFIX ddis: <http://ddis.ch/atai/> 
+                            PREFIX wd: <http://www.wikidata.org/entity/> 
+                            PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                            PREFIX schema: <http://schema.org/> 
+                            SELECT DISTINCT ?x WHERE {{ 
+                                ?x {p} {e} .
+                            }}
+                        '''
+        for predicate in predicates:
+            for entity in entities:
+                formatted_query = subject_query.format(e=entity, p=predicate)
+                for row in self._kg.query(formatted_query):
+                    subject = row.x.toPython()
+                    if self.element_is_entity(subject):
+                        subject = self.get_short_element_name(subject)
+                    facts.append(Fact(subject, predicate, entity))
         return facts
+
+    def find_facts_two_entities(self, predicates: List[str], entities1: List[str], entities2: List[str]) -> List[Fact]:
+        facts = []
+        query = '''
+                    PREFIX ddis: <http://ddis.ch/atai/> 
+                    PREFIX wd: <http://www.wikidata.org/entity/> 
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                    PREFIX schema: <http://schema.org/> 
+                    ASK {{
+                        {s} {p} {o} .
+                    }}
+                '''
+        for predicate in predicates:
+            for entity1 in entities1:
+                for entity2 in entities2:
+                    logging.debug(f'Query elements: {predicate} {entity1}) and {entity2})')
+                    if self._kg.query(query.format(s=entity1, p=predicate, o=entity2)):
+                        facts.append(Fact(entity1, predicate, entity2))
+                    if self._kg.query(query.format(s=entity2, p=predicate, o=entity1)):
+                        facts.append(Fact(entity2, predicate, entity1))
+        return facts
+
+    def get_film_description(self, film: str) -> str:
+        logging.debug(f'get_film_description for {film}')
+        query = f'''
+                    PREFIX ddis: <http://ddis.ch/atai/> 
+                    PREFIX wd: <http://www.wikidata.org/entity/> 
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                    PREFIX schema: <http://schema.org/> 
+                    SELECT DISTINCT ?x WHERE {{
+                        {film} wdt:P577 ?x .
+                    }}
+                '''
+        for row in self._kg.query(query):
+            date = row.x.toPython()
+            if isinstance(date, int):
+                return f'({date})'
+            else:
+                return f'({date.year})'
+        query = f'''
+                    PREFIX ddis: <http://ddis.ch/atai/> 
+                    PREFIX wd: <http://www.wikidata.org/entity/> 
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
+                    PREFIX schema: <http://schema.org/> 
+                    PREFIX ns2: <http://schema.org/>
+                    SELECT DISTINCT ?x WHERE {{
+                        {film} ns2:description ?x . 
+                    }}
+                '''
+        for row in self._kg.query(query):
+            return f'({row.x.toPython()})'
+        return ''

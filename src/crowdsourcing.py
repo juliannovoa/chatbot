@@ -1,8 +1,22 @@
-from typing import Mapping, Any
+from dataclasses import astuple, dataclass
+from typing import Optional, MutableMapping
 
 import pandas as pd
 
-from src import utils
+from src import utils, Fact
+
+
+@dataclass
+class CrowdQuestion:
+    subject: str
+    predicate: str
+    object: str
+    n_correct: int
+    n_incorrect: int
+    mistake_position: str
+    right_label: str
+    batch: str
+    kappa: float = 1.0
 
 
 class CrowdWorkers:
@@ -25,7 +39,7 @@ class CrowdWorkers:
         self.workers = self.data['WorkerId'].unique()
         self.filtered_data = self.filter_data(self.data)
         self.kappa_values = {}
-        self.questions = {}
+        self.questions: MutableMapping[Fact, CrowdQuestion] = {}
         self._process_data()
 
     def _process_data(self) -> None:
@@ -54,11 +68,14 @@ class CrowdWorkers:
 
                 n_answer = n_correct + n_incorrect
                 p_i = 1 / (n_answer * (n_answer - 1)) * (n_correct * (n_correct - 1) + n_incorrect * (n_incorrect - 1))
-                self.questions[(subj, pred, obj)] = {'n_correct': n_correct,
-                                                     'n_incorrect': n_incorrect,
-                                                     'mistake_position': mistake_position,
-                                                     'right_label': right_label,
-                                                     'batch': batch}
+                self.questions[Fact(subj, pred, obj)] = CrowdQuestion(subject=subj,
+                                                                      predicate=pred,
+                                                                      object=obj,
+                                                                      n_correct=n_correct,
+                                                                      n_incorrect=n_incorrect,
+                                                                      mistake_position=mistake_position,
+                                                                      right_label=right_label,
+                                                                      batch=batch)
                 total_correct += n_correct
                 total_incorrect += n_incorrect
                 p_i_total += p_i
@@ -72,18 +89,29 @@ class CrowdWorkers:
 
             self.kappa_values[batch] = (p_i_mean - p_e) / (1 - p_e)
 
-    def check_question(self, subject, predicate, obj) -> Mapping[str, Any]:
-        key = (subject, predicate, obj)
-        if key in self.questions:
-            question = self.questions[key]
-            question['kappa'] = self.kappa_values[question['batch']]
-            return question
-        return {}
+    def check_question(self, subject, predicate, obj) -> Optional[CrowdQuestion]:
+        key = Fact(subject, predicate, obj)
+        if key not in self.questions:
+            return None
+        question = self.questions[key]
+        question.kappa = self.kappa_values[question.batch]
+        return question
 
-    def find_question(self, question_predicate, question_entity) -> Mapping[str, Any]:
-        for (subject, predicate, obj), question in self.questions.items():
+    def find_question_one_entity(self, question_predicate, question_entity) -> Optional[CrowdQuestion]:
+        for fact, question in self.questions.items():
+            subject, predicate, obj = astuple(fact)
             if question_predicate == predicate and (question_entity == obj or question_entity == subject):
-                question['kappa'] = self.kappa_values[question['batch']]
+                question.kappa = self.kappa_values[question.batch]
                 return question
-        return {}
+        return None
 
+    def find_question_two_entities(self, question_predicate, question_entity1, question_entity2) -> Optional[
+        CrowdQuestion]:
+        for fact, question in self.questions.items():
+            subject, predicate, obj = astuple(fact)
+            if question_predicate == predicate \
+                    and ((question_entity1 == obj and question_entity2 == subject)
+                         or (question_entity1 == subject and question_entity2 == obj)):
+                question.kappa = self.kappa_values[question.batch]
+                return question
+        return None

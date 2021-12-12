@@ -98,7 +98,7 @@ class TestInformationFinder(TestCase):
         info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
                                      parsed_graph=Path(self.MOCK_GRAPH))
 
-        pred = info_finder.get_closest_node(self.LABEL_ENTITY_1)
+        pred = info_finder.find_closest_node(self.LABEL_ENTITY_1)
         self.assertEqual(pred, [f'{str(KnowledgeGraph.WD)}{self.ENTITY_1}'])
         self.delete_nt()
 
@@ -107,7 +107,7 @@ class TestInformationFinder(TestCase):
         info_finder = KnowledgeGraph(raw_graph=Path(self.MOCK_FILENAME),
                                      parsed_graph=Path(self.MOCK_GRAPH))
 
-        pred = info_finder.get_closest_node(self.LABEL_PREDICATE, predicate=True)
+        pred = info_finder.find_closest_node(self.LABEL_PREDICATE, predicate=True)
         self.assertEqual(pred, [f'{str(KnowledgeGraph.WDT)}{self.PREDICATE}'])
         self.delete_nt()
 
