@@ -12,6 +12,7 @@ from nltk.tokenize import word_tokenize
 from src.knowledge_graph import KnowledgeGraph
 from src.multimedia import Multimedia
 from src.ner import NameEntityRecognitionModelBERT
+from src.utils import _remove_stop_words
 
 
 class QuestionType(Enum):
@@ -81,11 +82,6 @@ class QuestionSolver:
             return QuestionType.WH_OF
         return QuestionType.UNK
 
-    def _remove_stop_words(self, sentence: str) -> str:
-        word_tokens = word_tokenize(sentence)
-        filtered_sentence = [w for w in word_tokens if not w.lower() in self._stop_words]
-        return ' '.join(filtered_sentence)
-
     def _process_multimedia(self, question: str) -> str:
         return self._multimedia.process_question(question)
 
@@ -99,7 +95,7 @@ class QuestionSolver:
         named_entities = list(ner_result.values())[0]
         for named_entity in named_entities:
             question = re.sub(named_entity, '', question)
-        clean_question = self._remove_stop_words(question)
+        clean_question = _remove_stop_words(self._stop_words, question)
 
         entities = self._knowledge_graph.get_closest_node(" ".join(named_entities), predicate=False)
         predicates = self._knowledge_graph.get_closest_node(clean_question, predicate=True)
@@ -135,7 +131,7 @@ class QuestionSolver:
         entities = list(ner_result.values())[0]
         for entity in entities:
             question = re.sub(entity, '', question)
-        question = self._remove_stop_words(question)
+        question = _remove_stop_words(self._stop_words, question)
         predicates = self._knowledge_graph.get_closest_node(question, predicate=True)
         entities = defaultdict(list)
         for idx, item in enumerate(items):

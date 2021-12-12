@@ -3,6 +3,8 @@ import os
 import nltk
 from pathlib import Path
 
+from nltk import word_tokenize
+
 nltk.download('averaged_perceptron_tagger')
 nltk.download('punkt')
 nltk.download('stopwords')
@@ -18,3 +20,8 @@ def get_model_path(file: str) -> Path:
 def get_data_path(file: str) -> Path:
     return DEFAULT_PATH_RAW_DATA.joinpath(file)
 
+
+def remove_stop_words(_stop_words, sentence: str) -> str:
+    word_tokens = word_tokenize(sentence)
+    filtered_sentence = [w for w in word_tokens if not w.lower() in _stop_words]
+    return ' '.join(filtered_sentence)
