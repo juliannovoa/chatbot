@@ -39,7 +39,7 @@ class QuestionSolver:
     def __init__(self):
         self._ner_model = NameEntityRecognitionModelBERT()
         self._knowledge_graph = KnowledgeGraph()
-        self._multimedia = Multimedia()
+        self._multimedia = Multimedia(self._knowledge_graph, self._ner_model)
         self._stop_words = set(stopwords.words('english'))
         self._questions: Mapping[QuestionType, Callable[[str], str]] = {
             QuestionType.MULTIMEDIA: self._process_multimedia,

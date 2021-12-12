@@ -256,11 +256,11 @@ class KnowledgeGraph:
         logging.debug(f'Query: predicates={predicates} and entities={entities})')
         facts = []
         obj_query = '''
-                        PREFIX ddis: <http://ddis.ch/atai/> 
-                        PREFIX wd: <http://www.wikidata.org/entity/> 
-                        PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
-                        PREFIX schema: <http://schema.org/> 
-                        SELECT DISTINCT ?x WHERE {{ 
+                        PREFIX ddis: <http://ddis.ch/atai/>
+                        PREFIX wd: <http://www.wikidata.org/entity/>
+                        PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                        PREFIX schema: <http://schema.org/>
+                        SELECT DISTINCT ?x WHERE {{
                             {e} {p} ?x .
                         }}
                     '''
@@ -274,11 +274,11 @@ class KnowledgeGraph:
                     facts.append(Fact(entity, predicate, obj))
 
         subject_query = '''
-                            PREFIX ddis: <http://ddis.ch/atai/> 
-                            PREFIX wd: <http://www.wikidata.org/entity/> 
-                            PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
-                            PREFIX schema: <http://schema.org/> 
-                            SELECT DISTINCT ?x WHERE {{ 
+                            PREFIX ddis: <http://ddis.ch/atai/>
+                            PREFIX wd: <http://www.wikidata.org/entity/>
+                            PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                            PREFIX schema: <http://schema.org/>
+                            SELECT DISTINCT ?x WHERE {{
                                 ?x {p} {e} .
                             }}
                         '''
@@ -295,10 +295,10 @@ class KnowledgeGraph:
     def find_facts_two_entities(self, predicates: List[str], entities1: List[str], entities2: List[str]) -> List[Fact]:
         facts = []
         query = '''
-                    PREFIX ddis: <http://ddis.ch/atai/> 
-                    PREFIX wd: <http://www.wikidata.org/entity/> 
-                    PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
-                    PREFIX schema: <http://schema.org/> 
+                    PREFIX ddis: <http://ddis.ch/atai/>
+                    PREFIX wd: <http://www.wikidata.org/entity/>
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                    PREFIX schema: <http://schema.org/>
                     ASK {{
                         {s} {p} {o} .
                     }}
@@ -316,10 +316,10 @@ class KnowledgeGraph:
     def get_film_description(self, film: str) -> str:
         logging.debug(f'get_film_description for {film}')
         query = f'''
-                    PREFIX ddis: <http://ddis.ch/atai/> 
-                    PREFIX wd: <http://www.wikidata.org/entity/> 
-                    PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
-                    PREFIX schema: <http://schema.org/> 
+                    PREFIX ddis: <http://ddis.ch/atai/>
+                    PREFIX wd: <http://www.wikidata.org/entity/>
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                    PREFIX schema: <http://schema.org/>
                     SELECT DISTINCT ?x WHERE {{
                         {film} wdt:P577 ?x .
                     }}
@@ -331,10 +331,10 @@ class KnowledgeGraph:
             else:
                 return f'({date.year})'
         query = f'''
-                    PREFIX ddis: <http://ddis.ch/atai/> 
-                    PREFIX wd: <http://www.wikidata.org/entity/> 
-                    PREFIX wdt: <http://www.wikidata.org/prop/direct/> 
-                    PREFIX schema: <http://schema.org/> 
+                    PREFIX ddis: <http://ddis.ch/atai/>
+                    PREFIX wd: <http://www.wikidata.org/entity/>
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                    PREFIX schema: <http://schema.org/>
                     PREFIX ns2: <http://schema.org/>
                     SELECT DISTINCT ?x WHERE {{
                         {film} ns2:description ?x . 
@@ -343,3 +343,20 @@ class KnowledgeGraph:
         for row in self._kg.query(query):
             return f'({row.x.toPython()})'
         return ''
+
+    def find_imdb_ids(self, entities: List[str]) -> List[str]:
+        logging.debug(f'Looking for imdb ids for {entities}')
+        query = '''
+                    PREFIX ddis: <http://ddis.ch/atai/>
+                    PREFIX wd: <http://www.wikidata.org/entity/>
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                    PREFIX schema: <http://schema.org/>
+                    SELECT DISTINCT ?x WHERE {{
+                        {e} wdt:P345 ?x
+                    }}
+                '''
+        imdb_ids = []
+        for entity in entities:
+            for row in self._kg.query(query.format(e=entity)):
+                imdb_ids.append(row.x.toPython())
+        return imdb_ids
