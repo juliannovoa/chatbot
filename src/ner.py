@@ -35,27 +35,46 @@ class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
         tag = ''
         begin_position = None
         end_position = None
-        entities = defaultdict(list)
+        ner_entities = defaultdict(list)
 
         for idx, token in enumerate(ner_results):
             if token['entity'][:2] == 'B-':
                 if end_position is not None:
-                    entities[tag].append(sentence[begin_position:end_position])
+                    ner_entities[tag].append(sentence[begin_position:end_position])
                 tag = token['entity'][2:]
                 begin_position = token['start']
                 end_position = token['end']
             elif token['entity'][:2] == 'I-':
                 end_position = token['end']
             elif end_position is not None:
-                entities[tag].append(sentence[begin_position:end_position])
+                ner_entities[tag].append(sentence[begin_position:end_position])
                 end_position = None
 
         if end_position is not None:
-            entities[tag].append(sentence[begin_position:end_position])
+            ner_entities[tag].append(sentence[begin_position:end_position])
 
-        logging.debug(f'Entities found: {entities}')
+        logging.debug(f'Entities found (no processing): {ner_entities}')
+        for entity_type, entities in ner_entities.items():
+            processed_entity = ''
+            processed_entities = []
+            for entity in entities:
+                candidate_no_space = ''.join([processed_entity, entity])
+                candidate_with_space = ' '.join([processed_entity, entity])
+                if candidate_no_space in sentence:
+                    processed_entity = candidate_no_space
+                elif candidate_with_space in sentence:
+                    processed_entity = candidate_with_space
+                else:
+                    processed_entities.append(processed_entity)
+                    processed_entity = entity
+            if len(processed_entity) > 0:
+                processed_entities.append(processed_entity)
 
-        return entities
+            ner_entities[entity_type] = processed_entities
+
+        logging.debug(f'Entities found: {ner_entities}')
+
+        return ner_entities
 
 
 class NameEntityRecognitionModelCRF(NameNameEntityRecognitionModel):
