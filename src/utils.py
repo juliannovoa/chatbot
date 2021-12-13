@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 
 import nltk
 from nltk import word_tokenize
@@ -10,6 +11,11 @@ nltk.download('stopwords')
 
 DEFAULT_PATH_MODELS = Path(os.path.dirname(__file__)).joinpath('data')
 DEFAULT_PATH_RAW_DATA = Path(os.path.dirname(__file__)).joinpath('data/raw_data')
+
+
+class ImageEntity(Enum):
+    CAST = 'cast'
+    MOVIE = 'movie'
 
 
 def get_model_path(file: str) -> Path:

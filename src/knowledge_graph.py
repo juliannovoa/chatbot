@@ -1,7 +1,8 @@
 import logging
 import pickle
 import re
-from typing import Tuple, List, Set, Optional
+from collections import defaultdict
+from typing import Tuple, List, Set, Optional, Mapping
 
 import editdistance
 import numpy as np
@@ -12,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 
 from src import utils, Fact
 from src.crowdsourcing import CrowdWorkers, CrowdQuestion
+from src.utils import ImageEntity
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -344,7 +346,7 @@ class KnowledgeGraph:
             return f'({row.x.toPython()})'
         return ''
 
-    def find_imdb_ids(self, entities: List[str]) -> List[str]:
+    def find_imdb_ids(self, entities: List[str]) -> Mapping[ImageEntity, List[str]]:
         logging.debug(f'Looking for imdb ids for {entities}')
         query = '''
                     PREFIX ddis: <http://ddis.ch/atai/>
@@ -355,8 +357,12 @@ class KnowledgeGraph:
                         {e} wdt:P345 ?x
                     }}
                 '''
-        imdb_ids = []
+        imdb_ids = defaultdict(list[str])
         for entity in entities:
             for row in self._kg.query(query.format(e=entity)):
-                imdb_ids.append(row.x.toPython())
+                imdb_id = row.x.toPython()
+                if imdb_id.startswith('tt'):
+                    imdb_ids[ImageEntity.MOVIE].append(imdb_id)
+                else:
+                    imdb_ids[ImageEntity.CAST].append(imdb_id)
         return imdb_ids
