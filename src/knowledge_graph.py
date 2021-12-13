@@ -5,7 +5,6 @@ from collections import defaultdict
 from typing import Tuple, List, Set, Optional, Mapping
 
 import editdistance
-import numpy as np
 import pandas as pd
 from pathlib import Path
 from rdflib import Graph, Namespace, URIRef
@@ -13,12 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 from src import utils, Fact
 from src.crowdsourcing import CrowdWorkers, CrowdQuestion
-from src.utils import ImageEntity
-
-
-def _read_csv(path: Path) -> pd.DataFrame:
-    return pd.read_csv(path.resolve(), index_col=0,
-                       converters={'sentence_embedding': lambda s: np.fromstring(s[1:-1], sep=', ')})
+from src.utils import ImageEntity, read_csv
 
 
 class KnowledgeGraph:
@@ -101,10 +95,10 @@ class KnowledgeGraph:
         logging.info('Loading knowledge graph.')
         with open(parsed_graph.resolve(), 'rb') as f:
             self._kg = pickle.load(f)
-        logging.debug(f'Knowledge graph loaded.')
+        logging.info(f'Knowledge graph loaded.')
 
         if not parsed_entities.exists() or not parsed_predicates.exists():
-            entities, predicates = self._parse_entities_and_predicates
+            entities, predicates = self._parse_entities_and_predicates()
             logging.debug('Saving predicates.')
             predicates.to_csv(parsed_predicates.resolve())
             del predicates
@@ -113,13 +107,12 @@ class KnowledgeGraph:
             del entities
             logging.debug('Entities and predicates saved.')
 
-        logging.debug('Loading predicates.')
-        self._predicates = _read_csv(parsed_predicates)
-        logging.debug('Loading entities.')
-        self._entities = _read_csv(parsed_entities)
-        logging.debug('Entities predicates loaded.')
+        logging.info('Loading predicates.')
+        self._predicates = read_csv(parsed_predicates)
+        logging.info('Loading entities.')
+        self._entities = read_csv(parsed_entities)
+        logging.info('Entities predicates loaded.')
 
-    @property
     def _parse_entities_and_predicates(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         logging.info('Computing entities and predicates.')
         entity_labels: List[str] = []
@@ -164,8 +157,7 @@ class KnowledgeGraph:
         logging.debug('Create predicate dataframe.')
         predicates = pd.DataFrame({'name': predicate_names,
                                    'label': predicate_labels,
-                                   'sentence_embedding': predicate_embeddings,
-                                   'embedding': None}
+                                   'sentence_embedding': predicate_embeddings}
                                   ).set_index('name')
 
         logging.debug('Computing entity embeddings.')
@@ -175,8 +167,7 @@ class KnowledgeGraph:
         logging.debug('Create entity dataframe.')
         entities = pd.DataFrame({'name': entity_names,
                                  'label': entity_labels,
-                                 'sentence_embedding': entity_embeddings,
-                                 'embedding': None}
+                                 'sentence_embedding': entity_embeddings}
                                 ).set_index('name')
 
         logging.debug('Entities and predicates retrieved.')

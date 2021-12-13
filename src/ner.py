@@ -23,8 +23,10 @@ class NameNameEntityRecognitionModel:
 
 class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
     def __init__(self):
+        logging.info('Loading NER.')
         tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
         model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
+        logging.info('NER Loaded.')
 
         self._ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
 

@@ -24,10 +24,12 @@ class Multimedia:
 
     def __init__(self, knowledge_graph: KnowledgeGraph, ner: NameNameEntityRecognitionModel,
                  path: Path = MULTIMEDIA_PATH):
+        logging.info('Loading multimedia information.')
         self._knowledge_graph = knowledge_graph
         self._ner = ner
         self._read_data(path)
         self._stop_words = set(stopwords.words('english'))
+        logging.info('Multimedia information loaded.')
 
     def _read_data(self, path: Path) -> None:
         self._image_data = pd.read_json(path.resolve())

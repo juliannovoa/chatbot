@@ -12,6 +12,7 @@ from nltk.tokenize import word_tokenize
 
 from src import Fact
 from src.crowdsourcing import CrowdQuestion
+from src.embbedings import Embeddings
 from src.knowledge_graph import KnowledgeGraph
 from src.multimedia import Multimedia
 from src.ner import NameEntityRecognitionModelBERT
@@ -40,6 +41,7 @@ class QuestionSolver:
         self._ner_model = NameEntityRecognitionModelBERT()
         self._knowledge_graph = KnowledgeGraph()
         self._multimedia = Multimedia(self._knowledge_graph, self._ner_model)
+        self._embeddings = Embeddings(self._knowledge_graph)
         self._stop_words = set(stopwords.words('english'))
         self._questions: Mapping[QuestionType, Callable[[str], str]] = {
             QuestionType.MULTIMEDIA: self._process_multimedia,
@@ -49,6 +51,7 @@ class QuestionSolver:
             QuestionType.ONE_ENTITY: self._process_one_entity_question,
             QuestionType.TWO_ENTITIES: self._process_two_entities_question
         }
+
 
     @classmethod
     def _generate_excuse(cls) -> str:
@@ -271,7 +274,9 @@ class QuestionSolver:
     def _process_facts(self, facts: List[Fact]) -> str:
         logging.debug(f'Processing facts: {facts}')
         objs_by_subject_and_pred = defaultdict(list)
+        checked_answers = []
         for fact in facts:
+            checked_answers.append(self._embeddings.check_triplet(fact))
             subject, predicate, obj = astuple(fact)
             if self._knowledge_graph.element_is_entity(obj):
                 obj = self._knowledge_graph.get_node_label(obj)
@@ -287,4 +292,5 @@ class QuestionSolver:
                 output.append(f'The {predicate}s of {subject} {description} are:')
                 for obj in objects:
                     output.append(f'\t{obj}')
+        output.extend(checked_answers)
         return '\n'.join(output)

@@ -2,6 +2,8 @@ import os
 from enum import Enum
 
 import nltk
+import numpy as np
+import pandas as pd
 from nltk import word_tokenize
 from pathlib import Path
 
@@ -30,3 +32,9 @@ def remove_stop_words(_stop_words, sentence: str) -> str:
     word_tokens = word_tokenize(sentence)
     filtered_sentence = [w for w in word_tokens if not w.lower() in _stop_words]
     return ' '.join(filtered_sentence)
+
+
+def read_csv(path: Path) -> pd.DataFrame:
+    return pd.read_csv(path.resolve(), index_col=0,
+                       converters={'sentence_embedding': lambda s: np.fromstring(s[1:-1], sep=', '),
+                                   'embedding': lambda s: np.fromstring(s[1:-1], sep=', ')})
