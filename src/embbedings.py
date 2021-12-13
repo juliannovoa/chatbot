@@ -1,7 +1,7 @@
 import csv
 import logging
 from dataclasses import astuple
-from typing import Tuple
+from typing import Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,7 @@ from src.utils import read_csv
 
 class Embeddings:
     ENTITY_EMBEDDINGS_PATH = utils.get_data_path('entity_embeds.npy')
-    PREDICATE_EMBEDDINGS_PATH = utils.get_data_path('entity_embeds.npy')
+    PREDICATE_EMBEDDINGS_PATH = utils.get_data_path('relation_embeds.npy')
     ENTITY_TO_ID_PATH = utils.get_data_path('entity_ids.del')
     PREDICATE_TO_ID_PATH = utils.get_data_path('relation_ids.del')
     PARSED_ENTITY_EMBEDDINGS_PATH = utils.get_model_path('entity_embeds.parsed')
@@ -54,18 +54,18 @@ class Embeddings:
         logging.debug('Parsing embeddings of entities.')
         with open(entity2id.resolve(), 'r') as f:
             entities = {
-                self._knowledge_graph.get_short_element_name(ent):
-                    (entity_emb[int(idx)] / np.linalg.norm(entity_emb[int(idx)])).tolist()
+                self._knowledge_graph.get_short_element_name(ent): entity_emb[int(idx)].tolist()
                 for idx, ent in csv.reader(f, delimiter='\t')
             }
         df_entities = pd.DataFrame(data=entities.items(), columns=['entity', 'embedding'])
         df_entities.set_index('entity', inplace=True)
+        films = self._knowledge_graph.find_films()
+        df_entities['is_movie'] = df_entities.index.isin(films)
 
         logging.debug('Parsing embeddings of predicates.')
         with open(predicate2id.resolve(), 'r') as f:
             entities = {
-                self._knowledge_graph.get_short_element_name(ent):
-                    (predicate_emb[int(idx)] / np.linalg.norm(predicate_emb[int(idx)])).tolist()
+                self._knowledge_graph.get_short_element_name(ent): predicate_emb[int(idx)].tolist()
                 for idx, ent in csv.reader(f, delimiter='\t')
             }
 
@@ -74,20 +74,20 @@ class Embeddings:
 
         return df_entities, df_predicates
 
-    def check_triplet(self, fact: Fact, threshold: int = 100) -> str:
+    def check_triplet(self, fact: Fact, threshold: int = 100) -> Optional[str]:
         subject, predicate, obj = astuple(fact)
         if subject not in self._entity_embeddings.index \
                 or obj not in self._entity_embeddings.index \
                 or predicate not in self._predicate_embeddings.index:
-            return ''
+            return None
 
-        expected_object_embedding = \
+        expected_embedding = \
             self._entity_embeddings.embedding.loc[subject] + self._predicate_embeddings.embedding.loc[predicate]
-        ranking = self._entity_embeddings.embedding.apply(lambda row: expected_object_embedding.dot(row)).rank(ascending=False)
+        ranking = self._entity_embeddings.embedding.apply(
+            lambda row: np.linalg.norm(expected_embedding - row)).rank()
         if ranking.loc[obj] < threshold:
-            return ''
-        output = ['However, I think that my information could be wrong.',
-                  f'The {self._knowledge_graph.get_node_label(predicate, is_predicate=True)} of {self._knowledge_graph.get_node_label(subject)} could be:']
+            return None
+        output = [f'The {self._knowledge_graph.get_node_label(predicate, is_predicate=True)} of {self._knowledge_graph.get_node_label(subject)} could be:']
         for idx in ranking[ranking <= 3].index:
             output.append(f'\t{self._knowledge_graph.get_node_label(idx)}')
 

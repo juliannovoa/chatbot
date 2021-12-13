@@ -80,7 +80,7 @@ class KnowledgeGraph:
 
         logging.info('Loading SentenceTransformer model.')
         self._sentence_embedding = SentenceTransformer(self.SENTENCE_EMBEDDINGS_MODEL)
-        logging.debug('Sentence-embeddings model loaded.')
+        logging.info('Sentence-embeddings model loaded.')
 
         if not parsed_graph.exists():
             logging.info('Knowledge graph not available. Start process to parse it.')
@@ -357,3 +357,20 @@ class KnowledgeGraph:
                 else:
                     imdb_ids[ImageEntity.CAST].append(imdb_id)
         return imdb_ids
+
+    def find_films(self) -> List[str]:
+        logging.debug(f'Looking for imdb ids for all films')
+        query = '''
+                    PREFIX ddis: <http://ddis.ch/atai/>
+                    PREFIX wd: <http://www.wikidata.org/entity/>
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                    PREFIX schema: <http://schema.org/>
+                    SELECT DISTINCT ?x WHERE {
+                        ?x wdt:P31 wd:Q11424
+                    }
+                '''
+        films = []
+
+        for row in self._kg.query(query):
+            films.append(self.get_short_element_name(row.x.toPython()))
+        return films

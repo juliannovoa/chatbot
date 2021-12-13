@@ -37,4 +37,5 @@ def remove_stop_words(_stop_words, sentence: str) -> str:
 def read_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path.resolve(), index_col=0,
                        converters={'sentence_embedding': lambda s: np.fromstring(s[1:-1], sep=', '),
-                                   'embedding': lambda s: np.fromstring(s[1:-1], sep=', ')})
+                                   'embedding': lambda s: np.fromstring(s[1:-1], sep=', '),
+                                   'is_movie': lambda x: x == 'True'})

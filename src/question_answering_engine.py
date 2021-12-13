@@ -274,9 +274,10 @@ class QuestionSolver:
     def _process_facts(self, facts: List[Fact]) -> str:
         logging.debug(f'Processing facts: {facts}')
         objs_by_subject_and_pred = defaultdict(list)
-        checked_answers = []
+        wrong_answers = []
         for fact in facts:
-            checked_answers.append(self._embeddings.check_triplet(fact))
+            if checked_answer := self._embeddings.check_triplet(fact):
+                wrong_answers.append(checked_answer)
             subject, predicate, obj = astuple(fact)
             if self._knowledge_graph.element_is_entity(obj):
                 obj = self._knowledge_graph.get_node_label(obj)
@@ -292,5 +293,7 @@ class QuestionSolver:
                 output.append(f'The {predicate}s of {subject} {description} are:')
                 for obj in objects:
                     output.append(f'\t{obj}')
-        output.extend(checked_answers)
+        if wrong_answers:
+            output.append('However, I think that my information could be wrong.')
+            output.extend(wrong_answers)
         return '\n'.join(output)
