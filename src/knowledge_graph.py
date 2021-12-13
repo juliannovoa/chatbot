@@ -44,7 +44,7 @@ class KnowledgeGraph:
 
     @classmethod
     def element_is_entity(cls, element) -> bool:
-        return isinstance(element, str) and element.startswith(cls.SHORT_PREFIX[cls.WD]) or element in cls.WD
+        return isinstance(element, str) and (element.startswith(cls.SHORT_PREFIX[cls.WD]) or element in cls.WD)
 
     @classmethod
     def element_is_predicate(cls, element: str) -> bool:
