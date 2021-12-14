@@ -1,7 +1,6 @@
 import json
 import logging
 import time
-from collections import defaultdict
 from typing import Optional
 
 import requests

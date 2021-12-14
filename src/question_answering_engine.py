@@ -46,7 +46,7 @@ class QuestionSolver:
     RECOMMENDATION_KEYWORDS = ("recommend", "recomend", "suggest", "sugest", "similar")
     MULTIMEDIA_KEYWORDS = ("pictur", "imag", "poster", "frame")
     GREETINGS_KEYWORDS = ("hi", "hello", "hallo", "gruezi", "grüezi")
-    CLASS_KEYWORDS = ("class", "subclass", "type", "subtyp", "subtype", "instance")
+    CLASS_KEYWORDS = ("class", "subclass", "type", "subtyp", "subtype", "instanc", "instance")
 
     def __init__(self):
         self._ner_model = NameEntityRecognitionModelBERT()
@@ -84,7 +84,7 @@ class QuestionSolver:
             return self._questions[question_type](question, idx)
         except ValueError:
             return self._generate_excuse()
-        except Exception as e:
+        except Exception:
             return self._generate_excuse()
 
     def _get_question_type(self, question: str, idx: Optional[str]) -> QuestionType:
