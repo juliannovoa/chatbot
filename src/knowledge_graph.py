@@ -33,6 +33,7 @@ class KnowledgeGraph:
     PROCESSED_GRAPH_PATH = utils.get_model_path('graph.g')
     ENTITIES_PATH = utils.get_model_path('entities.csv')
     PREDICATES_PATH = utils.get_model_path('predicates.csv')
+    SENTENCE_TRANSFORMER_PATH = utils.get_model_path('all-MiniLM-L6-v2')
 
     SENTENCE_EMBEDDINGS_MODEL = 'all-MiniLM-L6-v2'
 
@@ -79,7 +80,7 @@ class KnowledgeGraph:
         logging.debug('Crowd workers loaded.')
 
         logging.info('Loading SentenceTransformer model.')
-        self._sentence_embedding = SentenceTransformer(self.SENTENCE_EMBEDDINGS_MODEL)
+        self._sentence_embedding = SentenceTransformer(self.SENTENCE_TRANSFORMER_PATH.resolve())
         logging.info('Sentence-embeddings model loaded.')
 
         if not parsed_graph.exists():

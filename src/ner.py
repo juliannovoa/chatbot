@@ -22,10 +22,13 @@ class NameNameEntityRecognitionModel:
 
 
 class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
+
+    NER_TRANSFORMER_PATH = utils.get_model_path('bert-base-NER')
+
     def __init__(self):
         logging.info('Loading NER.')
-        tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER")
-        model = AutoModelForTokenClassification.from_pretrained("dslim/bert-base-NER")
+        tokenizer = AutoTokenizer.from_pretrained(self.NER_TRANSFORMER_PATH.resolve())
+        model = AutoModelForTokenClassification.from_pretrained(self.NER_TRANSFORMER_PATH.resolve())
         logging.info('NER Loaded.')
 
         self._ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
