@@ -46,7 +46,7 @@ class QuestionSolver:
     RECOMMENDATION_KEYWORDS = ("recommend", "recomend", "suggest", "sugest", "similar")
     MULTIMEDIA_KEYWORDS = ("pictur", "imag", "poster", "frame")
     GREETINGS_KEYWORDS = ("hi", "hello", "hallo", "gruezi", "grüezi")
-    CLASS_KEYWORDS = ("class", "subclass", "type", "subtyp", "subtype", "instance of")
+    CLASS_KEYWORDS = ("class", "subclass", "type", "subtyp", "subtype", "instance")
 
     def __init__(self):
         self._ner_model = NameEntityRecognitionModelBERT()
