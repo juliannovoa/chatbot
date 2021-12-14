@@ -1,12 +1,14 @@
 import logging
 import pickle
 from collections import defaultdict
-from typing import Mapping, List
+from typing import Mapping, List, Optional
 
 import nltk
 import numpy as np
 import pandas as pd
 import sklearn_crfsuite
+from nltk import word_tokenize
+from nltk.stem import PorterStemmer
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn_crfsuite import metrics
@@ -17,13 +19,13 @@ from src import utils
 
 
 class NameNameEntityRecognitionModel:
-    def find_name_entities(self, sentence: str) -> Mapping[str, List[str]]:
+    def find_name_entities(self, sentence: str, idx: Optional[str]) -> List[str]:
         pass
 
 
 class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
-
     NER_TRANSFORMER_PATH = utils.get_model_path('bert-base-NER')
+    PRONOUNS_KEYWORDS = ("he", "she", "his", "hi", "her", "it")
 
     def __init__(self):
         logging.info('Loading NER.')
@@ -32,9 +34,10 @@ class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
         logging.info('NER Loaded.')
 
         self._ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
+        self._context = defaultdict(list)
 
-    def find_name_entities(self, sentence: str) -> Mapping[str, List[str]]:
-        logging.debug(f'Sentence: {sentence}')
+    def find_name_entities(self, sentence: str, user_id: Optional[str] = None, update: bool = True) -> List[str]:
+        logging.debug(f'Sentence: {sentence}, user_id {user_id}')
         ner_results = self._ner_pipeline(sentence)
 
         tag = ''
@@ -59,9 +62,10 @@ class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
             ner_entities[tag].append(sentence[begin_position:end_position])
 
         logging.debug(f'Entities found (no processing): {ner_entities}')
+        processed_entities = []
         for entity_type, entities in ner_entities.items():
             processed_entity = ''
-            processed_entities = []
+
             for entity in entities:
                 candidate_no_space = ''.join([processed_entity, entity])
                 candidate_with_space = ' '.join([processed_entity, entity])
@@ -75,11 +79,29 @@ class NameEntityRecognitionModelBERT(NameNameEntityRecognitionModel):
             if len(processed_entity) > 0:
                 processed_entities.append(processed_entity)
 
-            ner_entities[entity_type] = processed_entities
+        logging.debug(f'len > 0 {len(processed_entities) > 0}, user_id not None {user_id != None} and update {update}')
+        if len(processed_entities) > 0 and user_id != None and update:
+            logging.debug(f'Save context')
+            self._context[user_id] = processed_entities
 
-        logging.debug(f'Entities found: {ner_entities}')
+        logging.debug(f'len == 0 {len(processed_entities) == 0}, user_id not None {user_id != None} and pronoun {self._contains_pronoun(sentence)}')
+        if len(processed_entities) == 0 and user_id is not None and self._contains_pronoun(sentence):
+            logging.debug(f'Retrieving previous context.')
+            processed_entities = self._context[user_id]
 
-        return ner_entities
+        logging.debug(f'Entities found: {processed_entities}')
+        return processed_entities
+
+    def _contains_pronoun(self, question: str) -> bool:
+        question = question.rstrip('?')
+        words = word_tokenize(question)
+        stemmer = PorterStemmer()
+        for word in words:
+            stemmed_word = stemmer.stem(word)
+            logging.debug(f'stemmed_word {stemmed_word}')
+            if stemmed_word in self.PRONOUNS_KEYWORDS:
+                return True
+        return False
 
 
 class NameEntityRecognitionModelCRF(NameNameEntityRecognitionModel):
@@ -248,7 +270,7 @@ class NameEntityRecognitionModelCRF(NameNameEntityRecognitionModel):
             f.close()
         logging.info('Model loaded')
 
-    def find_name_entities(self, sentence: str) -> Mapping[str, List[str]]:
+    def find_name_entities(self, sentence: str, user_id: str) -> Mapping[str, List[str]]:
         data = self.process_input_text(sentence)
         input_model = [[self.extract_features(row) for _, row in data.iterrows()]]
         output_model = self._ner_model.predict(input_model)

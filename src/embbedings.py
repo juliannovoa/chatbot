@@ -10,7 +10,7 @@ from pathlib import Path
 
 from src import utils, Fact
 from src.knowledge_graph import KnowledgeGraph
-from src.utils import read_csv
+from src.utils import read_csv, ImageEntity
 
 
 class DataFrameFields(Enum):
@@ -98,14 +98,13 @@ class Embeddings:
             lambda row: np.linalg.norm(expected_embedding - row)).rank()
         if ranking.loc[obj] < threshold:
             return None
-        output = [
-            f'The {self._knowledge_graph.get_node_label(predicate, is_predicate=True)} of {self._knowledge_graph.get_node_label(subject)} could be:']
+        output = []
         for idx in ranking[ranking <= 3].index:
-            output.append(f'\t{self._knowledge_graph.get_node_label(idx)}')
+            output.append(f' {self._knowledge_graph.get_node_label(idx)}')
 
-        return '\n'.join(output)
+        return f'The {self._knowledge_graph.get_node_label(predicate, is_predicate=True)} of {self._knowledge_graph.get_node_label(subject)} could be:' + ', '.join(output) + '.'
 
-    def get_similar_film(self, film_entities: List[str], top_n: int = 8, n_return=2) -> List[str]:
+    def get_similar_film(self, film_entities: List[str], top_n: int = 8, n_return: int = 2) -> List[str]:
         logging.debug('Get similar films with embeddings.')
         output = []
         for film_entity in film_entities:
@@ -118,6 +117,51 @@ class Embeddings:
                 lambda row: np.linalg.norm(movie_embedding - row)).rank()
 
             for film in ranking[(ranking <= top_n) & (ranking > 0)].sample(n_return).index:
-                output.append(f'\t{self._knowledge_graph.get_node_label(film)}')
+                film_label = f'{self._knowledge_graph.get_node_label(film)}'
+                try:
+                    link = f' (imdb:{self._knowledge_graph.find_imdb_ids(film)[ImageEntity.MOVIE][0]})'
+                    film_label = ' '.join((film_label, link))
+                except Exception:
+                    pass
+                output.append(film_label)
+
         logging.debug(f'Recommendations: {output}')
         return output
+
+    def get_closest_solution(self, predicates: List[str], entities: List[str], threshold=7000) -> Optional[Fact]:
+        closest_fact = None
+        for predicate in predicates:
+            for entity in entities:
+                # Entity is subject
+                expected_embedding = \
+                    self._entity_embeddings.embedding.loc[entity] + self._predicate_embeddings.embedding.loc[predicate]
+                distances = self._entity_embeddings.embedding.apply(
+                    lambda row: np.linalg.norm(expected_embedding - row))
+                if distances.min() < threshold:
+                    threshold = distances.min()
+                    closest_entity = distances.idxmin()
+                    closest_fact = Fact(entity, predicate, closest_entity)
+
+                # Entity is object
+                expected_embedding = \
+                    self._entity_embeddings.embedding.loc[entity] - self._predicate_embeddings.embedding.loc[predicate]
+                distances = self._entity_embeddings.embedding.apply(
+                    lambda row: np.linalg.norm(expected_embedding - row))
+                if distances.min() < threshold:
+                    threshold = distances.min()
+                    closest_entity = distances.idxmin()
+                    closest_fact = Fact(closest_entity, predicate, entity)
+
+        return closest_fact
+
+    def get_class(self, entities: List[str]) -> Optional[Fact]:
+        predicate = 'ddis:indirectSubclassOf'
+        for entity in entities:
+            # Entity is subject
+            expected_embedding = \
+                self._entity_embeddings.embedding.loc[entity] + self._predicate_embeddings.embedding.loc[predicate]
+            ranking = self._entity_embeddings.embedding.apply(
+                lambda row: np.linalg.norm(expected_embedding - row)).rank()
+            return Fact(subject=entity, predicate= predicate, object=ranking[ranking == 1][0])
+
+        return None

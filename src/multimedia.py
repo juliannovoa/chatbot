@@ -34,8 +34,8 @@ class Multimedia:
     def _read_data(self, path: Path) -> None:
         self._image_data = pd.read_json(path.resolve())
 
-    def process_question(self, question: str) -> str:
-        imdb_ids = self._knowledge_graph.find_imdb_ids(self._retrieve_entities(question))
+    def process_question(self, question: str, idx: str) -> str:
+        imdb_ids = self._knowledge_graph.find_imdb_ids(self._retrieve_entities(question, idx))
         if not imdb_ids:
             raise ValueError('No imdb id found')
 
@@ -66,14 +66,13 @@ class Multimedia:
             answer.append(f'image:{re.sub(".jpg", "", img)}')
         return '\n'.join(answer)
 
-    def _retrieve_entities(self, query: str) -> List[str]:
+    def _retrieve_entities(self, query: str, idx: str) -> List[str]:
         logging.debug(f'Looking for entities')
-        ner_result = self._ner.find_name_entities(query)
+        ner_result = self._ner.find_name_entities(query, idx)
         nodes = []
 
-        for named_entities in ner_result.values():
-            for named_entity in named_entities:
-                nodes.extend(self._knowledge_graph.find_closest_node(named_entity, predicate=False))
+        for named_entity in ner_result:
+            nodes.extend(self._knowledge_graph.find_closest_node(named_entity, predicate=False))
         if nodes:
             return nodes
         return self._knowledge_graph.find_closest_node(remove_stop_words(self._stop_words, query), predicate=False)

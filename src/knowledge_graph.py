@@ -177,6 +177,8 @@ class KnowledgeGraph:
     def find_closest_node(self, query: str, embedding_threshold: float = 0.35,
                           edit_distance_threshold: int = 100, predicate: bool = False) -> List[str]:
         logging.debug(f'--- entity matching for "{query}"')
+        if predicate and query == "":
+            return['ns2:description']
         if predicate:
             df = self._predicates
         else:
@@ -254,6 +256,8 @@ class KnowledgeGraph:
                         PREFIX wd: <http://www.wikidata.org/entity/>
                         PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                         PREFIX schema: <http://schema.org/>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        PREFIX ns2: <http://schema.org/>
                         SELECT DISTINCT ?x WHERE {{
                             {e} {p} ?x .
                         }}
@@ -272,6 +276,8 @@ class KnowledgeGraph:
                             PREFIX wd: <http://www.wikidata.org/entity/>
                             PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                             PREFIX schema: <http://schema.org/>
+                            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                            PREFIX ns2: <http://schema.org/>
                             SELECT DISTINCT ?x WHERE {{
                                 ?x {p} {e} .
                             }}
@@ -293,6 +299,8 @@ class KnowledgeGraph:
                     PREFIX wd: <http://www.wikidata.org/entity/>
                     PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                     PREFIX schema: <http://schema.org/>
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    PREFIX ns2: <http://schema.org/>
                     ASK {{
                         {s} {p} {o} .
                     }}
@@ -307,35 +315,40 @@ class KnowledgeGraph:
                         facts.append(Fact(entity2, predicate, entity1))
         return facts
 
-    def get_film_description(self, film: str) -> str:
+    def get_film_description(self, film: str) -> Optional[str]:
         logging.debug(f'get_film_description for {film}')
-        query = f'''
+        query = '''
                     PREFIX ddis: <http://ddis.ch/atai/>
                     PREFIX wd: <http://www.wikidata.org/entity/>
                     PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                     PREFIX schema: <http://schema.org/>
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    PREFIX ns2: <http://schema.org/>
                     SELECT DISTINCT ?x WHERE {{
+                        {film} wdt:P31 wd:Q11424 .
                         {film} wdt:P577 ?x .
                     }}
                 '''
-        for row in self._kg.query(query):
+        for row in self._kg.query(query.format(film=film)):
             date = row.x.toPython()
             if isinstance(date, int):
                 return f'({date})'
             else:
                 return f'({date.year})'
-        query = f'''
+        query = '''
                     PREFIX ddis: <http://ddis.ch/atai/>
                     PREFIX wd: <http://www.wikidata.org/entity/>
                     PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                     PREFIX schema: <http://schema.org/>
                     PREFIX ns2: <http://schema.org/>
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                     SELECT DISTINCT ?x WHERE {{
+                        {film} wdt:P31 wd:Q11424 .
                         {film} ns2:description ?x . 
                     }}
                 '''
-        for row in self._kg.query(query):
-            return f'({row.x.toPython()})'
+        for row in self._kg.query(query.format(film=film)):
+            return f' ({row.x.toPython()})'
         return ''
 
     def find_imdb_ids(self, entities: List[str]) -> Mapping[ImageEntity, List[str]]:
@@ -345,6 +358,8 @@ class KnowledgeGraph:
                     PREFIX wd: <http://www.wikidata.org/entity/>
                     PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                     PREFIX schema: <http://schema.org/>
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    PREFIX ns2: <http://schema.org/>
                     SELECT DISTINCT ?x WHERE {{
                         {e} wdt:P345 ?x
                     }}
@@ -366,6 +381,8 @@ class KnowledgeGraph:
                     PREFIX wd: <http://www.wikidata.org/entity/>
                     PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                     PREFIX schema: <http://schema.org/>
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    PREFIX ns2: <http://schema.org/>
                     SELECT DISTINCT ?x WHERE {
                         ?x wdt:P31 wd:Q11424
                     }
@@ -383,6 +400,8 @@ class KnowledgeGraph:
                             PREFIX wd: <http://www.wikidata.org/entity/>
                             PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                             PREFIX schema: <http://schema.org/>
+                            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                            PREFIX ns2: <http://schema.org/>
                             SELECT DISTINCT ?g WHERE {
                                 ?f wdt:P31 wd:Q11424.
                                 ?f wdt:P136 ?g.
@@ -403,6 +422,8 @@ class KnowledgeGraph:
                             PREFIX wd: <http://www.wikidata.org/entity/>
                             PREFIX wdt: <http://www.wikidata.org/prop/direct/>
                             PREFIX schema: <http://schema.org/>
+                            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                            PREFIX ns2: <http://schema.org/>
                             SELECT DISTINCT ?f ?id WHERE {{
                                 ?f wdt:P31 wd:Q11424.
                                 {genre}
@@ -414,6 +435,28 @@ class KnowledgeGraph:
         genre_query = '' if not genre else f'\n ?f wdt:P136 {genre}.'
         for entity in entities:
             for row in self._kg.query(query.format(e=entity, genre=genre_query)):
-                recommendations.append(self.get_node_label(self.get_short_element_name(row.f)))
-                recommendations.append(f'imdb:{row.id.toPython()}')
+                film = self.get_node_label(self.get_short_element_name(row.f))
+                link = f'(imdb:{row.id.toPython()})'
+                recommendations.append(' '.join((film, link)))
         return recommendations
+
+    def get_class(self, entities: List[str]) -> Optional[str]:
+        logging.debug(f'Looking for classes')
+        query = '''
+                    PREFIX ddis: <http://ddis.ch/atai/>
+                    PREFIX wd: <http://www.wikidata.org/entity/>
+                    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                    PREFIX schema: <http://schema.org/>
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    PREFIX ns2: <http://schema.org/>
+                    SELECT DISTINCT ?l WHERE {{
+                        {e} wdt:P31 ?c.
+                        ?c rdfs:label ?l.
+                    }}
+                '''
+
+        for entity in entities:
+            for row in self._kg.query(query.format(e=entity)):
+                return f'{self.get_node_label(entity)} is an instance of {row.l.toPython()}.'
+
+        return None
