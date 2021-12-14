@@ -360,7 +360,7 @@ class KnowledgeGraph:
         return imdb_ids
 
     def find_films(self) -> List[str]:
-        logging.debug(f'Looking for imdb ids for all films')
+        logging.debug(f'Looking for all films')
         query = '''
                     PREFIX ddis: <http://ddis.ch/atai/>
                     PREFIX wd: <http://www.wikidata.org/entity/>
@@ -375,3 +375,45 @@ class KnowledgeGraph:
         for row in self._kg.query(query):
             films.append(self.get_short_element_name(row.x.toPython()))
         return films
+
+    def find_genres(self) -> Mapping[str, str]:
+        logging.debug(f'Looking for genres')
+        query = '''
+                            PREFIX ddis: <http://ddis.ch/atai/>
+                            PREFIX wd: <http://www.wikidata.org/entity/>
+                            PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                            PREFIX schema: <http://schema.org/>
+                            SELECT DISTINCT ?g WHERE {
+                                ?f wdt:P31 wd:Q11424.
+                                ?f wdt:P136 ?g.
+                                ?g rdfs:label ?l.
+                            }
+                        '''
+        genres = {}
+        for row in self._kg.query(query):
+            genre = self.get_short_element_name(row.g.toPython())
+            label = re.sub('film', '', self.get_node_label(genre)).strip()
+            genres[label] = genre
+        return genres
+
+    def get_recommendations(self, entities: List[str], genre: Optional[str]) -> List[str]:
+        logging.debug(f'Looking for recommendations from {entities}')
+        query = '''
+                            PREFIX ddis: <http://ddis.ch/atai/>
+                            PREFIX wd: <http://www.wikidata.org/entity/>
+                            PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+                            PREFIX schema: <http://schema.org/>
+                            SELECT DISTINCT ?f ?id WHERE {{
+                                ?f wdt:P31 wd:Q11424.
+                                {genre}
+                                ?f ?r {e}.
+                                ?f wdt:P345 ?id
+                            }}
+                        '''
+        recommendations = []
+        genre_query = '' if not genre else f'\n ?f wdt:P136 {genre}.'
+        for entity in entities:
+            for row in self._kg.query(query.format(e=entity, genre=genre_query)):
+                recommendations.append(self.get_node_label(self.get_short_element_name(row.f)))
+                recommendations.append(f'imdb:{row.id.toPython()}')
+        return recommendations

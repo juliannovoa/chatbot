@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from dataclasses import astuple
 from enum import Enum
-from typing import Mapping, Callable, List
+from typing import Mapping, Callable, List, Optional
 
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
@@ -20,6 +20,7 @@ from src.utils import remove_stop_words
 
 
 class QuestionType(Enum):
+    GREETING = 0
     MULTIMEDIA = 1
     RECOMMENDATION = 2
     ONE_ENTITY = 3
@@ -34,8 +35,18 @@ class QuestionSolver:
                "I am sorry. I did not understand your question. Could you say it in a different way?",
                "I am not sure if I can help you. Could you ask the question with other words?",
                "I am still learning. Maybe I can help you if you ask in a different manner :)")
+    SUGGESTIONS = ("I recommend you these films:",
+                   "You should watch these films, I think they are amazing:",
+                   "I think, you will enjoy these films:",
+                   "These are my suggestions:")
+    GREETINGS = (
+        "Hallo! I am Skynet. Nice to meet you. I can help you to find information about movies. Please ask me :)",
+        "Grüezi! Can I help you?",
+        "Hello! I known a lot about movies. Do you want to ask me something?",
+        "Hi! My name is Skynet. I am here to help you :)")
     RECOMMENDATION_KEYWORDS = ("recommend", "recomend", "suggest", "sugest", "similar")
-    MULTIMEDIA_KEYWORDS = ("pictur", "imag", "poster", "frame")
+    MULTIMEDIA_KEYWORDS = ("pictur", "imag", "poster", "frame", "look lik", "looks lik")
+    GREETINGS_KEYWORDS = ("hi", "hello", "hallo", "gruezi", "grüezi")
 
     def __init__(self):
         self._ner_model = NameEntityRecognitionModelBERT()
@@ -43,19 +54,29 @@ class QuestionSolver:
         self._multimedia = Multimedia(self._knowledge_graph, self._ner_model)
         self._embeddings = Embeddings(self._knowledge_graph)
         self._stop_words = set(stopwords.words('english'))
+        self._genres = self._knowledge_graph.find_genres()
         self._questions: Mapping[QuestionType, Callable[[str], str]] = {
             QuestionType.MULTIMEDIA: self._process_multimedia,
             QuestionType.RECOMMENDATION: self._process_recommendation,
+            QuestionType.GREETING: self._process_greeting,
             QuestionType.WHO_OF: self._process_who_of_question,
             QuestionType.WH_OF: self._process_wh_of_generic_question,
             QuestionType.ONE_ENTITY: self._process_one_entity_question,
             QuestionType.TWO_ENTITIES: self._process_two_entities_question
+
         }
 
+    @classmethod
+    def _process_greeting(cls, _) -> str:
+        return random.choice(cls.GREETINGS)
 
     @classmethod
     def _generate_excuse(cls) -> str:
         return random.choice(cls.EXCUSES)
+
+    @classmethod
+    def _generate_suggestion_head(cls) -> str:
+        return random.choice(cls.SUGGESTIONS)
 
     def answer_question(self, question: str) -> str:
         question_type = self._get_question_type(question)
@@ -77,6 +98,8 @@ class QuestionSolver:
                 return QuestionType.RECOMMENDATION
             if stemmed_word in self.MULTIMEDIA_KEYWORDS:
                 return QuestionType.MULTIMEDIA
+            if stemmed_word in self.GREETINGS_KEYWORDS:
+                return QuestionType.GREETING
 
         # Classify the factual question
         n_entities = len(self._ner_model.find_name_entities(question))
@@ -94,7 +117,24 @@ class QuestionSolver:
         return self._multimedia.process_question(question)
 
     def _process_recommendation(self, question: str) -> str:
-        raise NotImplemented('Cannot do recommendations')
+        logging.debug(f'Processing recommendation question')
+        question = question.rstrip('?')
+        ner_result = self._ner_model.find_name_entities(question)
+        named_entities = list(ner_result.values())[0]
+        entities = self._knowledge_graph.find_closest_node(" ".join(named_entities), predicate=False)
+        answer = [self._generate_suggestion_head()]
+
+        if suggestion_embeddings := self._embeddings.get_similar_film(entities):
+            answer.extend(suggestion_embeddings)
+            return '\n'.join(answer)
+
+        genre = self._find_genre(question)
+
+        if suggestion_graph := self._knowledge_graph.get_recommendations(entities, genre):
+            answer.extend(suggestion_graph)
+            return '\n'.join(answer)
+
+        raise ValueError('No recommendation found')
 
     def _process_one_entity_question(self, question: str) -> str:
         logging.debug(f'Processing one entity question')
@@ -297,3 +337,9 @@ class QuestionSolver:
             output.append('However, I think that my information could be wrong.')
             output.extend(wrong_answers)
         return '\n'.join(output)
+
+    def _find_genre(self, question: str) -> Optional[str]:
+        for label, genre in self._genres.items():
+            if label in question:
+                return genre
+        return None
