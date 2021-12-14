@@ -31,7 +31,7 @@ class QuestionType(Enum):
 
 class QuestionSolver:
     EXCUSES = ("Sorry, I didn't get that, could you reformulate your question?",
-               "I am sorry. I did not understand your question. Could you say it in a different way?",
+               "I am sorry. I do not know how to answer this. Could you say it in a different way?",
                "I am not sure if I can help you. Could you ask the question with other words?",
                "I am still learning. Maybe I can help you if you ask in a different manner :)")
     SUGGESTIONS = ("I recommend you these films:",
@@ -85,7 +85,7 @@ class QuestionSolver:
         except ValueError:
             return self._generate_excuse()
         except Exception as e:
-            logging.error(e)
+            return self._generate_excuse()
 
     def _get_question_type(self, question: str, idx: Optional[str]) -> QuestionType:
         question = question.rstrip('?')
@@ -169,7 +169,7 @@ class QuestionSolver:
             answer.extend(random.sample(suggestion_graph, samples))
             return self._generate_suggestion_head() + ', '.join(answer) + '.'
 
-        raise ValueError('No recommendation found')
+        return "I'm sorry, I don't know what to recommend you :("
 
     def _process_one_entity_question(self, question: str, idx: str) -> str:
         logging.debug(f'Processing one entity question')

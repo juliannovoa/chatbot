@@ -332,9 +332,9 @@ class KnowledgeGraph:
         for row in self._kg.query(query.format(film=film)):
             date = row.x.toPython()
             if isinstance(date, int):
-                return f'({date})'
+                return f' ({date})'
             else:
-                return f'({date.year})'
+                return f' ({date.year})'
         query = '''
                     PREFIX ddis: <http://ddis.ch/atai/>
                     PREFIX wd: <http://www.wikidata.org/entity/>
