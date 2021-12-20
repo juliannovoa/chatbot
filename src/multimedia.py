@@ -60,7 +60,7 @@ class Multimedia:
             df = df[df.cast.apply(lambda row: imdb_id in row)]
 
         if df.empty:
-            return "I'm sorry. I've not found any picture. Can you rewrite your request?"
+            return "I'm sorry. I've not found any picture."
         answer = ['I have found some pictures:']
         for img in df.img.sample(n=3):
             answer.append(f'image:{re.sub(".jpg", "", img)}')

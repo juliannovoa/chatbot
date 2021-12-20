@@ -313,6 +313,32 @@ class KnowledgeGraph:
                         facts.append(Fact(entity1, predicate, entity2))
                     if self._kg.query(query.format(s=entity2, p=predicate, o=entity1)):
                         facts.append(Fact(entity2, predicate, entity1))
+
+        if facts:
+            return facts
+
+        query = '''
+            PREFIX ddis: <http://ddis.ch/atai/>
+            PREFIX wd: <http://www.wikidata.org/entity/>
+            PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+            PREFIX schema: <http://schema.org/>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            PREFIX ns2: <http://schema.org/>
+            SELECT DISTINCT ?x WHERE {{
+                {s} ?x {o} .
+            }}
+        '''
+
+        for entity1 in entities1:
+            for entity2 in entities2:
+                logging.debug(f'Query elements- Second Try: {entity1}) and {entity2})')
+                for row in self._kg.query(query.format(s=entity1, o=entity2)):
+                    predicate = self.get_short_element_name(row.x.toPython())
+                    facts.append(Fact(entity1, predicate, entity2))
+                for row in self._kg.query(query.format(s=entity2, o=entity1)):
+                    predicate = self.get_short_element_name(row.x.toPython())
+                    facts.append(Fact(entity2, predicate, entity1))
+
         return facts
 
     def get_film_description(self, film: str) -> Optional[str]:
